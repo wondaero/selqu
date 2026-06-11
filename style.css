@@ -1,0 +1,222 @@
+/* Plus Jakarta Sans 폰트 로드 */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,600&display=swap');
+
+:root {
+  --font-primary: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  
+  /* 테마 컬러 (기본: 라이트 모드) */
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f5f9;
+  
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #94a3b8;
+  
+  --accent-primary: #6366f1; /* Indigo */
+  --accent-secondary: #a855f7; /* Purple */
+  --accent-glow: rgba(99, 102, 241, 0.1);
+  
+  --border-color: rgba(226, 232, 240, 0.8);
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.5);
+  
+  --success: #10b981;
+  --success-light: rgba(16, 185, 129, 0.1);
+  --error: #ef4444;
+  --error-light: rgba(239, 68, 68, 0.1);
+  --warning: #f59e0b;
+}
+
+[data-theme="dark"] {
+  --bg-primary: #090d16;
+  --bg-secondary: #111827;
+  --bg-tertiary: #1f2937;
+  
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-tertiary: #64748b;
+  
+  --accent-primary: #818cf8; /* Light Indigo */
+  --accent-secondary: #c084fc; /* Light Purple */
+  --accent-glow: rgba(129, 140, 248, 0.15);
+  
+  --border-color: rgba(55, 65, 81, 0.5);
+  --glass-bg: rgba(17, 24, 39, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  
+  --success: #34d399;
+  --success-light: rgba(52, 211, 153, 0.15);
+  --error: #f87171;
+  --error-light: rgba(248, 113, 113, 0.15);
+}
+
+* {
+  font-family: var(--font-primary);
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
+  overflow: hidden;
+}
+
+/* Glassmorphism 효과 */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.03);
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+[data-theme="dark"] .glass {
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+}
+
+/* 스크롤바 커스텀 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+/* 출제 옵션 버튼 및 테마별 상태 설정 */
+.quiz-config-btn, .difficulty-config-btn, .type-config-btn {
+  background-color: var(--bg-secondary);
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+}
+
+.quiz-config-btn:hover, .difficulty-config-btn:hover, .type-config-btn:hover {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  transform: translateY(-1px);
+}
+
+.active-config {
+  background-color: var(--accent-glow) !important;
+  border-color: var(--accent-primary) !important;
+  color: var(--accent-primary) !important;
+  box-shadow: 0 0 12px 0 var(--accent-glow);
+}
+
+/* 퀴즈 선택 버튼 스타일 */
+.option-btn {
+  width: 100%;
+  padding: 1rem 1.25rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-secondary);
+  text-align: left;
+  font-weight: 500;
+  font-size: 0.925rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  position: relative;
+}
+
+.option-btn:hover:not(:disabled) {
+  border-color: var(--accent-primary);
+  background-color: var(--bg-tertiary);
+  padding-left: 1.5rem;
+}
+
+.option-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.5rem;
+  background-color: var(--bg-tertiary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+}
+
+.option-btn:hover:not(:disabled) .option-badge {
+  background-color: var(--accent-primary);
+  color: white;
+}
+
+/* 정/오답 액션 애니메이션 클래스 */
+.option-correct {
+  border-color: var(--success) !important;
+  background-color: var(--success-light) !important;
+  color: var(--success) !important;
+}
+
+.option-correct .option-badge {
+  background-color: var(--success) !important;
+  color: white !important;
+}
+
+.option-wrong {
+  border-color: var(--error) !important;
+  background-color: var(--error-light) !important;
+  color: var(--error) !important;
+}
+
+.option-wrong .option-badge {
+  background-color: var(--error) !important;
+  color: white !important;
+}
+
+/* 흔들림 애니메이션 (오답일 때) */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
+.animate-shake {
+  animation: shake 0.4s ease-in-out;
+}
+
+/* 통통 튀는 애니메이션 (정답일 때) */
+@keyframes bounce-sm {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.animate-bounce-sm {
+  animation: bounce-sm 0.3s ease-in-out;
+}
+
+/* 모달 애니메이션 활성화 */
+.modal-active {
+  transform: scale(1) !important;
+  opacity: 1 !important;
+}
+
+/* 커스텀 로딩 바 애니메이션 */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer-loading {
+  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--border-color) 50%, var(--bg-tertiary) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
