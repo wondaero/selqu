@@ -1,26 +1,61 @@
 // PDF.js 워커 세팅
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
-// API Key 난독화 및 로드 헬퍼 (평문 자동 마이그레이션 포함)
-function getStoredApiKey() {
-  const raw = localStorage.getItem('selqu_api_key') || '';
-  if (!raw) return '';
-  try {
-    const decoded = atob(raw);
-    if (decoded.startsWith('AIzaSy')) {
-      return decoded;
-    }
-  } catch (e) {}
-  
-  if (raw.startsWith('AIzaSy')) {
-    localStorage.setItem('selqu_api_key', btoa(raw));
+// Supabase URL 정제 헬퍼 (프로토콜 자동 추가 및 호스트 추출)
+function getSanitizedSupabaseUrl(url) {
+  if (!url) return '';
+  let cleanUrl = url.trim();
+  if (!/^https?:\/\//i.test(cleanUrl)) {
+    cleanUrl = 'https://' + cleanUrl;
   }
-  return raw;
+  try {
+    const parsed = new URL(cleanUrl);
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch (e) {
+    return cleanUrl.replace(/\/functions\/v1\/gemini-proxy\/?$/i, '')
+                   .replace(/\/functions\/v1\/?$/i, '')
+                   .replace(/\/functions\/?$/i, '')
+                   .replace(/\/$/, '');
+  }
+}
+
+// Supabase 설정 로드 헬퍼 (기본 접속 정보와 localStorage 복합 로드)
+function getStoredSupabaseConfig() {
+  const defaultUrl = 'https://uncffkzyvaapanixvniy.supabase.co';
+  const defaultAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVuY2Zma3p5dmFhcGFuaXh2bml5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4MjgwOTYsImV4cCI6MjA5NjQwNDA5Nn0.CT_vKSjcpSmtFQ3KIUesHIAdyyq5HfOsGq1VKNsfRiY';
+  
+  const rawUrl = localStorage.getItem('selqu_supabase_url') || defaultUrl;
+  const url = getSanitizedSupabaseUrl(rawUrl);
+  const anonKeyRaw = localStorage.getItem('selqu_supabase_anon_key') || '';
+  let anonKey = '';
+  
+  if (anonKeyRaw) {
+    try {
+      anonKey = atob(anonKeyRaw);
+    } catch (e) {
+      anonKey = anonKeyRaw;
+    }
+  } else {
+    anonKey = defaultAnonKey;
+  }
+  
+  return { url, anonKey };
 }
 
 // 애플리케이션 상태 관리 객체
+const supabaseConfig = getStoredSupabaseConfig();
+let storedModel = localStorage.getItem('selqu_api_model') || 'gemini-2.5-flash';
+if (storedModel === 'gemini-1.5-flash') {
+  storedModel = 'gemini-2.5-flash';
+  localStorage.setItem('selqu_api_model', 'gemini-2.5-flash');
+} else if (storedModel === 'gemini-1.5-pro') {
+  storedModel = 'gemini-2.5-pro';
+  localStorage.setItem('selqu_api_model', 'gemini-2.5-pro');
+}
+
 const state = {
-  apiKey: getStoredApiKey(),
+  supabaseUrl: supabaseConfig.url,
+  supabaseAnonKey: supabaseConfig.anonKey,
   theme: localStorage.getItem('selqu_theme') || 'light',
   
   // 퀴즈 관련 데이터
@@ -37,7 +72,7 @@ const state = {
     difficulty: 'medium',
     types: ['mcq', 'tf', 'short'],
     language: 'ko',
-    model: localStorage.getItem('selqu_api_model') || 'gemini-1.5-flash'
+    model: storedModel
   },
   
   // 학습 내역
@@ -65,7 +100,8 @@ const DOM = {
   apiModalOverlay: document.getElementById('apiModalOverlay'),
   apiModalCard: document.getElementById('apiModalCard'),
   closeApiModalBtn: document.getElementById('closeApiModalBtn'),
-  apiKeyInput: document.getElementById('apiKeyInput'),
+  supabaseUrlInput: document.getElementById('supabaseUrlInput'),
+  supabaseAnonKeyInput: document.getElementById('supabaseAnonKeyInput'),
   toggleApiKeyVisibility: document.getElementById('toggleApiKeyVisibility'),
   saveApiKeyBtn: document.getElementById('saveApiKeyBtn'),
   apiModelSelect: document.getElementById('apiModelSelect'),
@@ -155,16 +191,18 @@ function initTheme() {
   DOM.html.setAttribute('data-theme', state.theme);
 }
 
-// API 키 상태 표시 업데이트
+// API (Supabase 프록시) 상태 표시 업데이트
 function updateApiStatusIndicator() {
-  if (state.apiKey) {
+  if (state.supabaseUrl && state.supabaseAnonKey) {
     DOM.apiStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse';
-    DOM.apiStatusText.innerText = 'Gemini 활성화';
-    DOM.apiKeyInput.value = state.apiKey;
+    DOM.apiStatusText.innerText = 'Supabase 연결됨';
+    if (DOM.supabaseUrlInput) DOM.supabaseUrlInput.value = state.supabaseUrl;
+    if (DOM.supabaseAnonKeyInput) DOM.supabaseAnonKeyInput.value = state.supabaseAnonKey;
   } else {
     DOM.apiStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-rose-500';
-    DOM.apiStatusText.innerText = 'Gemini 미설정';
-    DOM.apiKeyInput.value = '';
+    DOM.apiStatusText.innerText = 'Supabase 설정 필요';
+    if (DOM.supabaseUrlInput) DOM.supabaseUrlInput.value = '';
+    if (DOM.supabaseAnonKeyInput) DOM.supabaseAnonKeyInput.value = '';
   }
   if (DOM.apiModelSelect) {
     DOM.apiModelSelect.value = state.config.model;
@@ -234,19 +272,35 @@ function setupEventListeners() {
   DOM.toggleApiKeyVisibility.addEventListener('click', toggleApiKeyVisibility);
   DOM.saveApiKeyBtn.addEventListener('click', saveApiKey);
   
-  // API 키 입력 실시간 저장 및 엔터키 등록
-  DOM.apiKeyInput.addEventListener('input', () => {
-    const val = DOM.apiKeyInput.value.trim();
-    state.apiKey = val;
-    if (val) {
-      localStorage.setItem('selqu_api_key', btoa(val));
+  // API 설정 입력 이벤트 리스너 및 엔터키 등록
+  DOM.supabaseUrlInput.addEventListener('input', () => {
+    state.supabaseUrl = DOM.supabaseUrlInput.value.trim();
+    if (state.supabaseUrl) {
+      localStorage.setItem('selqu_supabase_url', state.supabaseUrl);
     } else {
-      localStorage.removeItem('selqu_api_key');
+      localStorage.removeItem('selqu_supabase_url');
+    }
+    updateApiStatusIndicator();
+  });
+
+  DOM.supabaseAnonKeyInput.addEventListener('input', () => {
+    const val = DOM.supabaseAnonKeyInput.value.trim();
+    state.supabaseAnonKey = val;
+    if (val) {
+      localStorage.setItem('selqu_supabase_anon_key', btoa(val));
+    } else {
+      localStorage.removeItem('selqu_supabase_anon_key');
     }
     updateApiStatusIndicator();
   });
   
-  DOM.apiKeyInput.addEventListener('keydown', (e) => {
+  DOM.supabaseAnonKeyInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      saveApiKey();
+    }
+  });
+
+  DOM.supabaseUrlInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       saveApiKey();
     }
@@ -337,29 +391,36 @@ function toggleApiModal(isOpen) {
 
 function toggleApiKeyVisibility() {
   const icon = DOM.toggleApiKeyVisibility.querySelector('i');
-  if (DOM.apiKeyInput.type === 'password') {
-    DOM.apiKeyInput.type = 'text';
+  if (DOM.supabaseAnonKeyInput.type === 'password') {
+    DOM.supabaseAnonKeyInput.type = 'text';
     icon.className = 'fa-solid fa-eye-slash';
   } else {
-    DOM.apiKeyInput.type = 'password';
+    DOM.supabaseAnonKeyInput.type = 'password';
     icon.className = 'fa-solid fa-eye';
   }
 }
 
 function saveApiKey() {
-  const newKey = DOM.apiKeyInput.value.trim();
+  let newUrl = DOM.supabaseUrlInput.value.trim();
+  const newAnonKey = DOM.supabaseAnonKeyInput.value.trim();
   const newModel = DOM.apiModelSelect.value;
   
-  if (!newKey) {
-    alert('API Key를 올바르게 입력해주세요.');
+  if (!newUrl || !newAnonKey) {
+    alert('Supabase Project URL과 Anon Key를 모두 입력해주세요.');
     return;
   }
   
-  state.apiKey = newKey;
-  localStorage.setItem('selqu_api_key', btoa(newKey));
+  newUrl = getSanitizedSupabaseUrl(newUrl);
+  state.supabaseUrl = newUrl;
+  state.supabaseAnonKey = newAnonKey;
+  
+  localStorage.setItem('selqu_supabase_url', newUrl);
+  localStorage.setItem('selqu_supabase_anon_key', btoa(newAnonKey));
   
   state.config.model = newModel;
   localStorage.setItem('selqu_api_model', newModel);
+  
+  DOM.supabaseUrlInput.value = newUrl;
   
   updateApiStatusIndicator();
   toggleApiModal(false);
@@ -601,10 +662,21 @@ function fileToBase64(file) {
 // ----------------------------------------------------
 // 5. 전면 광고 모형 연출 제어
 // ----------------------------------------------------
+// 전역 설정: 테스트 중 광고 비활성화 플래그 (true이면 광고를 보지 않고 즉시 로딩하며, false이면 병렬로 광고를 봄)
+const IS_AD_ENABLED = false;
+
+// 병렬 처리를 위한 임시 상태 변수
+let isQuizGenerated = false;
+let isAdFinished = false;
+let quizGenerationError = null;
+
+// ----------------------------------------------------
+// 5. 전면 광고 모형 연출 제어
+// ----------------------------------------------------
 function startQuizGenerationProcess() {
   // 입력 검증
-  if (!state.apiKey) {
-    alert('퀴즈를 생성하려면 상단 설정에서 Gemini API Key를 등록해야 합니다.');
+  if (!state.supabaseUrl || !state.supabaseAnonKey) {
+    alert('퀴즈를 생성하려면 상단 설정에서 Supabase 프록시 정보를 등록해야 합니다.');
     toggleApiModal(true);
     return;
   }
@@ -630,11 +702,24 @@ function startQuizGenerationProcess() {
   DOM.generateQuizBtn.disabled = true;
   DOM.generateQuizBtn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> 문제 생성 요청 중...`;
 
-  // 전면 광고 노출 시작
-  showInterstitialAd(() => {
-    // 광고 시뮬레이션 종료 시점에 진짜 문제 생성을 트리거함
-    executeQuizGeneration();
-  });
+  // 상태 초기화
+  isQuizGenerated = false;
+  isAdFinished = false;
+  quizGenerationError = null;
+
+  // 1. AI 기반 문제 생성 비동기 호출 (병렬 실행)
+  executeQuizGenerationParallel();
+
+  // 2. 광고 시뮬레이션 제어 (병렬 실행)
+  if (!IS_AD_ENABLED) {
+    isAdFinished = true;
+    checkParallelCompletion();
+  } else {
+    showInterstitialAd(() => {
+      isAdFinished = true;
+      checkParallelCompletion();
+    });
+  }
 }
 
 function showInterstitialAd(onAdClosed) {
@@ -664,15 +749,39 @@ function showInterstitialAd(onAdClosed) {
   };
 }
 
+function checkParallelCompletion() {
+  // AI 생성과 광고 종료가 모두 완료되었을 때만 처리
+  if (isQuizGenerated && isAdFinished) {
+    // 생성 버튼 복구
+    DOM.generateQuizBtn.disabled = false;
+    DOM.generateQuizBtn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> <span>퀴즈 생성하기</span>`;
+    DOM.adOverlay.classList.add('hidden'); // 광고 창 강제 숨김
+
+    if (quizGenerationError) {
+      console.error('퀴즈 생성 중 오류 발생:', quizGenerationError);
+      alert(`퀴즈 생성에 실패했습니다: ${quizGenerationError.message}`);
+      return;
+    }
+
+    // 화면 전환
+    DOM.quizIdleState.classList.add('hidden');
+    DOM.quizResultState.classList.add('hidden');
+    DOM.quizActiveState.classList.remove('hidden');
+
+    // 첫 문제 렌더링
+    renderQuestion(0);
+    saveActiveQuizState();
+  }
+}
+
 // ----------------------------------------------------
 // 6. Gemini API 연동 및 데이터 생성
 // ----------------------------------------------------
 async function executeQuizGeneration() {
-  try {
-    const concept = DOM.quizConceptInput ? DOM.quizConceptInput.value.trim() : '';
+  const concept = DOM.quizConceptInput ? DOM.quizConceptInput.value.trim() : '';
 
-    // 시스템 프롬프트 및 응답 스키마 지시문
-    const promptText = `너는 전문 시험 출제 위원(Quiz Maker)이다. 아래 본문 텍스트 또는 이미지를 기반으로 퀴즈를 생성하라.
+  // 시스템 프롬프트 및 응답 스키마 지시문
+  const promptText = `너는 전문 시험 출제 위원(Quiz Maker)이다. 아래 본문 텍스트 또는 이미지를 기반으로 퀴즈를 생성하라.
 반드시 아래 지침을 준수해야 한다:
 1. 언어: ${state.config.language === 'ko' ? '한국어' : '영어'}
 2. 문항 수: 총 ${state.config.questionCount}개 문항
@@ -707,66 +816,69 @@ ${concept ? `6. 특별 출제 컨셉 및 지시사항:
 ${state.extractedText}
 `;
 
-    const parts = [{ text: promptText }];
-    if (state.imageParts && state.imageParts.length > 0) {
-      state.imageParts.forEach(part => parts.push(part));
+  const parts = [{ text: promptText }];
+  if (state.imageParts && state.imageParts.length > 0) {
+    state.imageParts.forEach(part => parts.push(part));
+  }
+
+  const requestBody = {
+    model: state.config.model,
+    contents: [{
+      parts: parts
+    }],
+    generationConfig: {
+      responseMimeType: "application/json"
     }
+  };
 
-    const requestBody = {
-      contents: [{
-        parts: parts
-      }],
-      generationConfig: {
-        responseMimeType: "application/json"
-      }
-    };
+  if (!state.supabaseUrl || !state.supabaseAnonKey) {
+    throw new Error('Supabase 프록시 설정이 되어 있지 않습니다. 설정(톱니바퀴 아이콘)에서 정보를 입력해주세요.');
+  }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${state.config.model}:generateContent?key=${state.apiKey}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody)
-    });
+  const baseUrl = getSanitizedSupabaseUrl(state.supabaseUrl);
+  const url = `${baseUrl}/functions/v1/gemini-proxy`;
+  console.log("Requesting Supabase Function URL:", url);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${state.supabaseAnonKey.trim()}`
+    },
+    body: JSON.stringify(requestBody)
+  });
 
-    if (!response.ok) {
-      throw new Error(`API 통신 에러 (코드: ${response.status})`);
-    }
+  if (!response.ok) {
+    throw new Error(`API 통신 에러 (코드: ${response.status})`);
+  }
 
-    const resData = await response.json();
-    const responseText = resData.candidates[0].content.parts[0].text;
-    const generatedData = parseCleanJSON(responseText);
+  const resData = await response.json();
+  const responseText = resData.candidates[0].content.parts[0].text;
+  const generatedData = parseCleanJSON(responseText);
 
-    if (!generatedData.questions || !Array.isArray(generatedData.questions)) {
-      throw new Error('올바른 퀴즈 데이터 구조가 아닙니다.');
-    }
+  if (!generatedData.questions || !Array.isArray(generatedData.questions)) {
+    throw new Error('올바른 퀴즈 데이터 구조가 아닙니다.');
+  }
 
-    // 상태 업데이트
-    state.questions = generatedData.questions;
-    state.userAnswers = state.questions.map(q => ({
-      questionId: q.id,
-      selectedAnswer: null,
-      isCorrect: false,
-      forcedCorrect: false
-    }));
-    state.currentQuestionIndex = 0;
+  // 상태 업데이트
+  state.questions = generatedData.questions;
+  state.userAnswers = state.questions.map(q => ({
+    questionId: q.id,
+    selectedAnswer: null,
+    isCorrect: false,
+    forcedCorrect: false
+  }));
+  state.currentQuestionIndex = 0;
+}
 
-    // 화면 전환
-    DOM.quizIdleState.classList.add('hidden');
-    DOM.quizResultState.classList.add('hidden');
-    DOM.quizActiveState.classList.remove('hidden');
-
-    // 첫 문제 렌더링
-    renderQuestion(0);
-    saveActiveQuizState();
-
+async function executeQuizGenerationParallel() {
+  try {
+    await executeQuizGeneration();
+    isQuizGenerated = true;
   } catch (err) {
-    console.error('퀴즈 생성 중 오류 발생:', err);
-    alert(`퀴즈 생성에 실패했습니다: ${err.message}`);
+    quizGenerationError = err;
+    isQuizGenerated = true;
   } finally {
-    DOM.generateQuizBtn.disabled = false;
-    DOM.generateQuizBtn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> <span>퀴즈 생성하기</span>`;
+    checkParallelCompletion();
   }
 }
 
@@ -991,6 +1103,7 @@ ${JSON.stringify(shortQuestionsToGrade)}
 }`;
 
       const requestBody = {
+        model: state.config.model,
         contents: [{
           parts: [{ text: promptText }]
         }],
@@ -999,11 +1112,18 @@ ${JSON.stringify(shortQuestionsToGrade)}
         }
       };
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${state.config.model}:generateContent?key=${state.apiKey}`;
+      if (!state.supabaseUrl || !state.supabaseAnonKey) {
+        throw new Error('Supabase 프록시 설정이 되어 있지 않습니다. 설정(톱니바퀴 아이콘)에서 정보를 입력해주세요.');
+      }
+
+      const baseUrl = getSanitizedSupabaseUrl(state.supabaseUrl);
+      const url = `${baseUrl}/functions/v1/gemini-proxy`;
+      console.log("Requesting Supabase Grading URL:", url);
       const response = await fetch(url, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.supabaseAnonKey.trim()}`
         },
         body: JSON.stringify(requestBody)
       });
