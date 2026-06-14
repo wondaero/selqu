@@ -669,11 +669,14 @@ const IS_AD_ENABLED = false;
 let isQuizGenerated = false;
 let isAdFinished = false;
 let quizGenerationError = null;
+let isQuizGenerationInProgress = false; // 진행 중 중복 클릭 방지용 플래그
 
 // ----------------------------------------------------
 // 5. 전면 광고 모형 연출 제어
 // ----------------------------------------------------
 function startQuizGenerationProcess() {
+  if (isQuizGenerationInProgress) return; // 이미 문제 생성 중이면 중단
+
   // 입력 검증
   if (!state.supabaseUrl || !state.supabaseAnonKey) {
     alert('퀴즈를 생성하려면 상단 설정에서 Supabase 프록시 정보를 등록해야 합니다.');
@@ -697,6 +700,8 @@ function startQuizGenerationProcess() {
       DOM.charCount.innerText = `${state.extractedText.length}자`;
     }
   }
+
+  isQuizGenerationInProgress = true; // 생성 프로세스 시작 플래그 설정
 
   // 생성 시작 버튼 로딩 처리
   DOM.generateQuizBtn.disabled = true;
@@ -756,6 +761,8 @@ function checkParallelCompletion() {
     DOM.generateQuizBtn.disabled = false;
     DOM.generateQuizBtn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> <span>퀴즈 생성하기</span>`;
     DOM.adOverlay.classList.add('hidden'); // 광고 창 강제 숨김
+
+    isQuizGenerationInProgress = false; // 프로세스 종료 플래그 해제
 
     if (quizGenerationError) {
       console.error('퀴즈 생성 중 오류 발생:', quizGenerationError);
