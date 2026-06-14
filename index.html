@@ -48,7 +48,7 @@
   <div class="flex h-screen overflow-hidden">
     
     <!-- 좌측 사이드바: 학습 히스토리 (데스크톱 전용, 모바일은 슬라이드인 토글) -->
-    <aside id="historySidebar" class="w-80 bg-white border-r border-slate-200 dark:bg-slate-900 dark:border-slate-800 flex flex-col flex-shrink-0 transition-transform duration-300 transform md:translate-x-0 -translate-x-full fixed md:relative z-30 h-full">
+    <aside id="historySidebar" class="w-[85vw] max-w-[320px] md:w-80 bg-white border-r border-slate-200 dark:bg-slate-900 dark:border-slate-800 flex flex-col flex-shrink-0 transition-transform duration-300 transform md:translate-x-0 -translate-x-full fixed md:relative z-30 h-full">
       <!-- 사이드바 헤더 -->
       <div class="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
         <h2 class="font-bold text-lg flex items-center gap-2">
@@ -85,7 +85,7 @@
     <div class="flex-1 flex flex-col h-full overflow-hidden">
       
       <!-- 메인 탑 내비게이션 헤더 -->
-      <header class="h-16 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between px-6 z-10">
+      <header class="h-16 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between px-4 md:px-6 z-10">
         <div class="flex items-center gap-3">
           <!-- 모바일 메뉴 토글 버튼 -->
           <button id="openSidebarBtn" class="md:hidden text-slate-600 dark:text-slate-300 hover:text-slate-900 focus:outline-none">
@@ -101,11 +101,7 @@
         </div>
 
         <div class="flex items-center gap-4">
-          <!-- API 설정 버튼 -->
-          <button id="apiSettingsBtn" class="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all duration-300 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700">
-            <span id="apiStatusDot" class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
-            <span id="apiStatusText" class="text-slate-600 dark:text-slate-300">AI 모델 설정</span>
-          </button>
+
           
           <!-- 다크모드 토글 버튼 -->
           <button id="themeToggleBtn" class="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
@@ -115,13 +111,13 @@
       </header>
 
       <!-- 메인 콘텐츠 스크롤 뷰 -->
-      <main class="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-50/50 dark:bg-slate-950/50 flex flex-col md:flex-row gap-8">
+      <main class="flex-1 overflow-y-auto p-4 md:p-5 bg-slate-50/50 dark:bg-slate-950/50 flex flex-col md:flex-row gap-6">
         
         <!-- 좌측 패널: 업로드 및 설정 -->
-        <section class="w-full md:w-[450px] flex flex-col gap-6 flex-shrink-0">
+        <section id="leftPanel" class="w-full md:w-[420px] flex flex-col gap-4 flex-shrink-0">
           
           <!-- 카드 1: 파일 업로드 / 텍스트 입력 드롭존 -->
-          <div class="glass p-6 rounded-2xl shadow-sm border border-slate-200/50 dark:border-slate-800/50 flex flex-col gap-4">
+          <div class="glass p-5 rounded-2xl shadow-sm border border-slate-200/50 dark:border-slate-800/50 flex flex-col gap-3">
             <h3 class="font-bold text-base flex items-center gap-2 text-slate-800 dark:text-slate-100">
               <i class="fa-solid fa-file-arrow-up text-indigo-500"></i>
               <span>1. 학습 자료 업로드</span>
@@ -139,7 +135,7 @@
 
             <!-- 파일 업로드 영역 -->
             <div id="uploadContainer" class="block">
-              <div id="dropzone" class="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-8 text-center cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 transition-all duration-300 bg-slate-50/50 dark:bg-slate-900/30 flex flex-col items-center justify-center">
+              <div id="dropzone" class="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl py-6 px-4 text-center cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 transition-all duration-300 bg-slate-50/50 dark:bg-slate-900/30 flex flex-col items-center justify-center">
                 <input type="file" id="fileInput" accept=".txt,.pdf,.xlsx,.xls,image/*" class="hidden" multiple>
                 <div class="w-12 h-12 rounded-full bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center text-indigo-500 mb-3">
                   <i class="fa-solid fa-cloud-arrow-up text-2xl"></i>
@@ -178,7 +174,7 @@
           </div>
 
           <!-- 카드 2: 퀴즈 출제 옵션 설정 -->
-          <div class="glass p-6 rounded-2xl shadow-sm border border-slate-200/50 dark:border-slate-800/50 flex flex-col gap-4">
+          <div class="glass p-5 rounded-2xl shadow-sm border border-slate-200/50 dark:border-slate-800/50 flex flex-col gap-3.5">
             <h3 class="font-bold text-base flex items-center gap-2 text-slate-800 dark:text-slate-100">
               <i class="fa-solid fa-sliders text-indigo-500"></i>
               <span>2. 문제 출제 옵션</span>
@@ -192,6 +188,7 @@
                 <button type="button" data-value="5" class="quiz-config-btn py-2 rounded-lg border text-sm font-semibold transition-all">5문항</button>
                 <button type="button" data-value="10" class="quiz-config-btn py-2 rounded-lg border text-sm font-semibold transition-all">10문항</button>
               </div>
+              <input type="number" id="quizCountCustomInput" min="1" max="20" placeholder="원하는 문항 수 직접 입력 (최대 20)" class="w-full px-3 py-2 rounded-lg text-xs bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-transparent dark:text-white transition-all mt-1">
             </div>
 
             <!-- 2. 난이도 -->
@@ -217,9 +214,18 @@
                 <button type="button" data-type="short" class="type-config-btn active-config py-2 rounded-lg border text-xs font-semibold transition-all flex flex-col items-center gap-1">
                   <i class="fa-solid fa-keyboard"></i><span>단답형</span>
                 </button>
+              </div>
             </div>
 
-            <!-- 4. 출제 컨셉 (선택사항) -->
+            <!-- 4. AI 모델 (고정 명시) -->
+            <div class="space-y-2">
+              <label class="text-xs font-bold text-slate-500 block">AI 모델</label>
+              <div class="py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100/50 dark:bg-slate-900/30 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                Gemini 2.5 Flash (기본 권장)
+              </div>
+            </div>
+
+            <!-- 5. 출제 컨셉 (선택사항) -->
             <div class="space-y-2">
               <label for="quizConceptInput" class="text-xs font-bold text-slate-500 block">출제 컨셉 (선택사항)</label>
               <input type="text" id="quizConceptInput" placeholder="예: 넌센스로 내줘, 아주 어렵게 내줘, 빈칸 채우기 형태로 내줘 등..." class="w-full px-3.5 py-2.5 rounded-lg text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-transparent dark:text-white transition-all">
@@ -235,23 +241,14 @@
         </section>
 
         <!-- 우측 패널: 인터랙티브 퀴즈 영역 -->
-        <section class="flex-1 flex flex-col">
+        <section id="rightPanel" class="flex-1 flex flex-col">
           
-          <!-- 상태 1: 퀴즈 시작 전 (대기 상태) -->
-          <div id="quizIdleState" class="flex-1 glass border border-slate-200/50 dark:border-slate-800/50 rounded-2xl flex flex-col items-center justify-center p-8 text-center min-h-[400px]">
-            <div class="w-24 h-24 rounded-2xl bg-indigo-50 dark:bg-indigo-950/30 flex items-center justify-center text-indigo-500 mb-6 shadow-inner animate-pulse">
-              <i class="fa-solid fa-graduation-cap text-5xl"></i>
-            </div>
-            <h2 class="text-2xl font-black text-slate-800 dark:text-slate-100 mb-3">나만의 맞춤 문제풀이 시작하기</h2>
-            <p class="text-sm text-slate-500 dark:text-slate-400 max-w-md leading-relaxed">
-              왼쪽에서 요약 노트, 문서 또는 이미지를 업로드하고 <span class="font-semibold text-indigo-500">퀴즈 생성하기</span>를 눌러주세요. AI가 직접 엄선한 최고의 맞춤형 퀴즈가 시작됩니다!
-            </p>
-          </div>
+
 
           <!-- 상태 2: 퀴즈 풀기 진행 중 -->
-          <div id="quizActiveState" class="flex-1 flex flex-col gap-6 hidden">
+          <div id="quizActiveState" class="flex-1 flex flex-col gap-4 hidden">
             <!-- 퀴즈 진행률 헤더 -->
-            <div class="glass px-6 py-4 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 flex flex-col gap-2">
+            <div class="glass px-5 py-3.5 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 flex flex-col gap-2">
               <div class="flex items-center justify-between text-xs font-bold text-slate-500">
                 <span class="flex items-center gap-1.5">
                   <i class="fa-solid fa-gamepad text-indigo-500"></i>
@@ -271,7 +268,7 @@
             </div>
 
             <!-- 현재 문제 카드 -->
-            <div id="questionCard" class="glass p-8 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 flex flex-col gap-6 relative overflow-hidden">
+            <div id="questionCard" class="glass p-6 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 flex flex-col gap-4 relative overflow-hidden">
               <span id="questionTypeBadge" class="absolute top-4 right-4 px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 text-[10px] font-extrabold rounded-full tracking-wider uppercase">MCQ</span>
               
               <!-- 문제 내용 -->
@@ -312,9 +309,12 @@
             </div>
 
             <!-- 네비게이션 제어 -->
-            <div class="flex justify-between items-center gap-4">
+            <div id="quizNavContainer" class="flex justify-between items-center gap-4 w-full">
               <button id="prevQuestionBtn" class="px-5 py-3 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                 이전 문제
+              </button>
+              <button id="quitQuizBtn" class="px-5 py-3 rounded-xl border border-rose-200 dark:border-rose-900/50 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-sm font-semibold transition-colors flex items-center gap-1.5">
+                <i class="fa-solid fa-arrow-left-long"></i> 첫 화면으로
               </button>
               <button id="nextQuestionBtn" class="px-6 py-3 bg-slate-800 dark:bg-slate-700 hover:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                 다음 문제
@@ -323,9 +323,9 @@
           </div>
 
           <!-- 상태 3: 퀴즈 결과 화면 -->
-          <div id="quizResultState" class="flex-1 flex flex-col gap-6 hidden">
+          <div id="quizResultState" class="flex-1 flex flex-col gap-4 hidden">
             <!-- 결과 대시보드 카드 -->
-            <div class="glass p-8 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 text-center flex flex-col items-center justify-center relative overflow-hidden">
+            <div class="glass p-6 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 text-center flex flex-col items-center justify-center relative overflow-hidden">
               <div class="absolute inset-0 bg-gradient-to-tr from-indigo-500/5 to-purple-500/5 pointer-events-none"></div>
               
               <div class="w-20 h-20 rounded-full bg-indigo-50 dark:bg-indigo-950/40 flex items-center justify-center text-indigo-500 mb-4">
@@ -359,7 +359,7 @@
             </div>
 
             <!-- 결과 리포트 및 복습 리스트 -->
-            <div class="glass p-6 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 flex flex-col gap-4">
+            <div class="glass p-5 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 flex flex-col gap-3">
               <h3 class="font-bold text-base text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 <i class="fa-solid fa-list-check text-indigo-500"></i>
                 <span>전체 문제 복습 및 채점 상세</span>
@@ -377,48 +377,7 @@
     </div>
   </div>
 
-  <!-- 모달 1: API 설정 창 -->
-  <div id="apiModal" class="fixed inset-0 z-50 flex items-center justify-center hidden">
-    <!-- 모달 배경 -->
-    <div id="apiModalOverlay" class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
-    
-    <!-- 모달 내용 -->
-    <div class="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl z-10 m-4 transition-all transform scale-95 opacity-0 duration-300" id="apiModalCard">
-      <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 mb-4">
-        <h3 class="font-bold text-lg text-slate-800 dark:text-slate-100 flex items-center gap-2">
-          <i class="fa-solid fa-sliders text-indigo-500"></i>
-          <span>AI 모델 설정</span>
-        </h3>
-        <button id="closeApiModalBtn" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
-          <i class="fa-solid fa-xmark text-lg"></i>
-        </button>
-      </div>
 
-      <div class="space-y-4">
-        <div class="p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl dark:bg-indigo-950/20 dark:border-indigo-900/30">
-          <p class="text-xs text-indigo-800 dark:text-indigo-300 leading-relaxed">
-            <i class="fa-solid fa-circle-info mr-1"></i>
-            Gemini API 서버는 백엔드(Supabase)를 통해 안전하게 연결되어 있습니다. 원하시는 AI 모델을 선택해 주세요.
-          </p>
-        </div>
-
-        <div class="space-y-2">
-          <label for="apiModelSelect" class="text-xs font-bold text-slate-500 block">사용할 AI 모델</label>
-          <select id="apiModelSelect" class="w-full px-3 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white">
-            <option value="gemini-2.5-flash">Gemini 2.5 Flash (기본 권장)</option>
-            <option value="gemini-2.5-pro">Gemini 2.5 Pro (고성능, 다소 느림)</option>
-            <option value="gemini-2.0-flash">Gemini 2.0 Flash (신속)</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="mt-6 flex gap-2">
-        <button id="saveApiKeyBtn" class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold transition-colors shadow-md shadow-indigo-600/20">
-          설정 저장하기
-        </button>
-      </div>
-    </div>
-  </div>
 
   <!-- 모달 2: 전면 광고 모형 UI 오버레이 (Interstitial Ad Simulation) -->
   <div id="adOverlay" class="fixed inset-0 z-50 flex items-center justify-center hidden bg-black/85 backdrop-blur-md">

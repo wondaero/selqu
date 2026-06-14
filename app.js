@@ -19,21 +19,39 @@ function getSanitizedSupabaseUrl(url) {
   }
 }
 
-// Supabase 설정 로드 헬퍼 (기본 접속 정보와 localStorage 복합 로드)
-function getStoredSupabaseConfig() {
+// Supabase 설정 로드 헬퍼 (기본 접속 정보와 IndexedDB/localStorage 복합 로드)
+async function getStoredSupabaseConfig() {
   const defaultUrl = 'https://uncffkzyvaapanixvniy.supabase.co';
   const defaultAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVuY2Zma3p5dmFhcGFuaXh2bml5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4MjgwOTYsImV4cCI6MjA5NjQwNDA5Nn0.CT_vKSjcpSmtFQ3KIUesHIAdyyq5HfOsGq1VKNsfRiY';
   
-  const rawUrl = localStorage.getItem('selqu_supabase_url') || defaultUrl;
-  const url = getSanitizedSupabaseUrl(rawUrl);
-  const anonKeyRaw = localStorage.getItem('selqu_supabase_anon_key') || '';
-  let anonKey = '';
+  // 1. IndexedDB 설정 조회 시도
+  let url = await getSetting('supabase_url');
+  let anonKeyRaw = await getSetting('supabase_anon_key');
   
-  if (anonKeyRaw) {
+  // 2. 만약 없으면 기존 LocalStorage에서 마이그레이션 시도
+  const oldUrl = localStorage.getItem('selqu_supabase_url');
+  const oldAnonKeyRaw = localStorage.getItem('selqu_supabase_anon_key');
+  
+  if (oldUrl) {
+    url = oldUrl;
+    await saveSetting('supabase_url', oldUrl);
+    localStorage.removeItem('selqu_supabase_url');
+  }
+  if (oldAnonKeyRaw) {
+    anonKeyRaw = oldAnonKeyRaw;
+    await saveSetting('supabase_anon_key', oldAnonKeyRaw);
+    localStorage.removeItem('selqu_supabase_anon_key');
+  }
+  
+  url = getSanitizedSupabaseUrl(url || defaultUrl);
+  
+  let anonKey = '';
+  const finalAnonKeyRaw = anonKeyRaw || '';
+  if (finalAnonKeyRaw) {
     try {
-      anonKey = atob(anonKeyRaw);
+      anonKey = atob(finalAnonKeyRaw);
     } catch (e) {
-      anonKey = anonKeyRaw;
+      anonKey = finalAnonKeyRaw;
     }
   } else {
     anonKey = defaultAnonKey;
@@ -43,20 +61,10 @@ function getStoredSupabaseConfig() {
 }
 
 // 애플리케이션 상태 관리 객체
-const supabaseConfig = getStoredSupabaseConfig();
-let storedModel = localStorage.getItem('selqu_api_model') || 'gemini-2.5-flash';
-if (storedModel === 'gemini-1.5-flash') {
-  storedModel = 'gemini-2.5-flash';
-  localStorage.setItem('selqu_api_model', 'gemini-2.5-flash');
-} else if (storedModel === 'gemini-1.5-pro') {
-  storedModel = 'gemini-2.5-pro';
-  localStorage.setItem('selqu_api_model', 'gemini-2.5-pro');
-}
-
 const state = {
-  supabaseUrl: supabaseConfig.url,
-  supabaseAnonKey: supabaseConfig.anonKey,
-  theme: localStorage.getItem('selqu_theme') || 'light',
+  supabaseUrl: '',
+  supabaseAnonKey: '',
+  theme: 'light',
   
   // 퀴즈 관련 데이터
   currentFiles: [],
@@ -72,11 +80,11 @@ const state = {
     difficulty: 'medium',
     types: ['mcq', 'tf', 'short'],
     language: 'ko',
-    model: storedModel
+    model: 'gemini-2.5-flash'
   },
   
   // 학습 내역
-  history: JSON.parse(localStorage.getItem('selqu_history') || '[]')
+  history: []
 };
 
 // DOM 요소 캐싱
@@ -93,18 +101,9 @@ const DOM = {
   clearHistoryBtn: document.getElementById('clearHistoryBtn'),
   emptyHistory: document.getElementById('emptyHistory'),
   
-  apiSettingsBtn: document.getElementById('apiSettingsBtn'),
-  apiStatusDot: document.getElementById('apiStatusDot'),
-  apiStatusText: document.getElementById('apiStatusText'),
-  apiModal: document.getElementById('apiModal'),
-  apiModalOverlay: document.getElementById('apiModalOverlay'),
-  apiModalCard: document.getElementById('apiModalCard'),
-  closeApiModalBtn: document.getElementById('closeApiModalBtn'),
-  supabaseUrlInput: document.getElementById('supabaseUrlInput'),
-  supabaseAnonKeyInput: document.getElementById('supabaseAnonKeyInput'),
-  toggleApiKeyVisibility: document.getElementById('toggleApiKeyVisibility'),
-  saveApiKeyBtn: document.getElementById('saveApiKeyBtn'),
-  apiModelSelect: document.getElementById('apiModelSelect'),
+  quizCountCustomInput: document.getElementById('quizCountCustomInput'),
+  leftPanel: document.getElementById('leftPanel'),
+  rightPanel: document.getElementById('rightPanel'),
   
   tabUpload: document.getElementById('tabUpload'),
   tabTextInput: document.getElementById('tabTextInput'),
@@ -126,7 +125,6 @@ const DOM = {
   quizConceptInput: document.getElementById('quizConceptInput'),
   
   // 퀴즈 뷰 상태
-  quizIdleState: document.getElementById('quizIdleState'),
   quizActiveState: document.getElementById('quizActiveState'),
   quizResultState: document.getElementById('quizResultState'),
   
@@ -149,6 +147,7 @@ const DOM = {
   
   prevQuestionBtn: document.getElementById('prevQuestionBtn'),
   nextQuestionBtn: document.getElementById('nextQuestionBtn'),
+  quitQuizBtn: document.getElementById('quitQuizBtn'),
   
   // 결과 화면
   resultGradeText: document.getElementById('resultGradeText'),
@@ -168,19 +167,185 @@ const DOM = {
 };
 
 // ----------------------------------------------------
-// 1. 초기 실행 및 설정 관리
+// 0. IndexedDB 설정 및 데이터 레이어
 // ----------------------------------------------------
-function init() {
-  initTheme();
-  updateApiStatusIndicator();
-  renderHistoryList();
-  setupEventListeners();
-  initConfigButtons();
-  loadActiveQuizState();
+const DB_NAME = 'selqu_db';
+const DB_VERSION = 1;
+const STORE_NAME = 'quiz_history';
+let dbInstance = null;
+
+function openDB() {
+  if (dbInstance) return Promise.resolve(dbInstance);
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+    request.onsuccess = (e) => {
+      dbInstance = e.target.result;
+      resolve(dbInstance);
+    };
+    request.onerror = (e) => reject(e.target.error);
+  });
 }
 
-// 테마 초기화
-function initTheme() {
+async function getHistory() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readonly');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.getAll();
+    request.onsuccess = () => {
+      // 내림차순 정렬 (최신 기록이 맨 위로) 단, ID가 숫자 타입인 실제 히스토리 레코드만 필터링
+      const list = (request.result || []).filter(item => typeof item.id === 'number');
+      list.sort((a, b) => b.id - a.id);
+      resolve(list);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function getActiveQuizState() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readonly');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.get('active_quiz_state');
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function saveHistoryRecord(record) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.put(record);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function clearHistoryRecords() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    
+    // 실제 히스토리 데이터(ID가 숫자형)만 삭제합니다.
+    const request = store.openCursor();
+    request.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        if (typeof cursor.key === 'number') {
+          cursor.delete();
+        }
+        cursor.continue();
+      } else {
+        resolve();
+      }
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// 설정 관련 헬퍼 함수
+async function saveSetting(key, val) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.put({ id: key, value: val });
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function getSetting(key) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readonly');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.get(key);
+    request.onsuccess = () => resolve(request.result ? request.result.value : null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// ----------------------------------------------------
+// 1. 초기 실행 및 설정 관리
+// ----------------------------------------------------
+async function init() {
+  await initTheme();
+  
+  // Supabase 설정을 비동기식으로 로딩하여 state를 동기화
+  const supabaseConfig = await getStoredSupabaseConfig();
+  state.supabaseUrl = supabaseConfig.url;
+  state.supabaseAnonKey = supabaseConfig.anonKey;
+
+  setupEventListeners();
+  initConfigButtons();
+
+  // 기존 로컬스토리지 데이터 IndexedDB로 자동 마이그레이션
+  const oldHistoryRaw = localStorage.getItem('selqu_history');
+  if (oldHistoryRaw) {
+    try {
+      const oldHistory = JSON.parse(oldHistoryRaw);
+      if (Array.isArray(oldHistory)) {
+        for (const item of oldHistory) {
+          await saveHistoryRecord(item);
+        }
+      }
+      localStorage.removeItem('selqu_history');
+    } catch (e) {
+      console.error('로컬스토리지 히스토리 마이그레이션 실패:', e);
+    }
+  }
+
+  const oldActiveQuizRaw = localStorage.getItem('selqu_active_quiz');
+  if (oldActiveQuizRaw) {
+    try {
+      const activeState = JSON.parse(oldActiveQuizRaw);
+      activeState.id = 'active_quiz_state';
+      await saveHistoryRecord(activeState);
+      localStorage.removeItem('selqu_active_quiz');
+    } catch (e) {
+      console.error('로컬스토리지 임시상태 마이그레이션 실패:', e);
+    }
+  }
+
+  // 데이터 로드
+  try {
+    state.history = await getHistory();
+  } catch (e) {
+    console.error('히스토리 로드 실패:', e);
+    state.history = [];
+  }
+
+  await loadActiveQuizState();
+  renderHistoryList();
+  updateLayoutForState(); // 초기 레이아웃(설정 전용 뷰) 세팅
+}
+
+// 테마 초기화 (비동기)
+async function initTheme() {
+  // 1. IndexedDB 설정 시도
+  let storedTheme = await getSetting('selqu_theme');
+  
+  // 2. 만약 없으면 기존 LocalStorage에서 마이그레이션 시도
+  const oldTheme = localStorage.getItem('selqu_theme');
+  if (oldTheme) {
+    storedTheme = oldTheme;
+    await saveSetting('selqu_theme', oldTheme);
+    localStorage.removeItem('selqu_theme');
+  }
+  
+  state.theme = storedTheme || 'light';
+
   if (state.theme === 'dark') {
     DOM.html.classList.add('dark');
     DOM.themeToggleIcon.className = 'fa-solid fa-sun';
@@ -191,37 +356,35 @@ function initTheme() {
   DOM.html.setAttribute('data-theme', state.theme);
 }
 
-// API (AI 모델) 상태 표시 업데이트
-function updateApiStatusIndicator() {
-  if (state.supabaseUrl && state.supabaseAnonKey) {
-    DOM.apiStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse';
-    
-    // 모델명 포맷팅
-    let modelLabel = 'Gemini';
-    if (state.config.model === 'gemini-2.5-flash') modelLabel = 'Gemini 2.5 Flash';
-    else if (state.config.model === 'gemini-2.5-pro') modelLabel = 'Gemini 2.5 Pro';
-    else if (state.config.model === 'gemini-2.0-flash') modelLabel = 'Gemini 2.0 Flash';
-    
-    DOM.apiStatusText.innerText = `AI 모델: ${modelLabel}`;
-  } else {
-    DOM.apiStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-rose-500';
-    DOM.apiStatusText.innerText = 'AI 설정 필요';
-  }
-  if (DOM.apiModelSelect) {
-    DOM.apiModelSelect.value = state.config.model;
-  }
-}
-
 // 설정 값 버튼 매핑 초기화
 function initConfigButtons() {
-  // 문제수 설정 버튼 리스너
+  // 문제수 설정 버튼 리스너 및 초기화
+  const presets = [3, 5, 10];
+  const isPreset = presets.includes(state.config.questionCount);
+
   document.querySelectorAll('.quiz-config-btn').forEach(btn => {
+    const val = parseInt(btn.getAttribute('data-value'));
+    if (isPreset && val === state.config.questionCount) {
+      btn.classList.add('active-config');
+    } else {
+      btn.classList.remove('active-config');
+    }
+
     btn.addEventListener('click', () => {
       document.querySelectorAll('.quiz-config-btn').forEach(b => b.classList.remove('active-config'));
       btn.classList.add('active-config');
       state.config.questionCount = parseInt(btn.getAttribute('data-value'));
+      
+      // 커스텀 입력값 비우기
+      if (DOM.quizCountCustomInput) {
+        DOM.quizCountCustomInput.value = '';
+      }
     });
   });
+
+  if (!isPreset && DOM.quizCountCustomInput) {
+    DOM.quizCountCustomInput.value = state.config.questionCount;
+  }
 
   // 난이도 설정 버튼 리스너
   document.querySelectorAll('.difficulty-config-btn').forEach(btn => {
@@ -251,6 +414,34 @@ function initConfigButtons() {
       }
     });
   });
+
+}
+
+// 퀴즈 진행 상태에 따른 화면 구성(설정 패널 vs 퀴즈 패널) 전환
+function updateLayoutForState() {
+  const isQuizRunning = (state.questions && state.questions.length > 0) &&
+                        (!DOM.quizActiveState.classList.contains('hidden') || 
+                         !DOM.quizResultState.classList.contains('hidden'));
+  
+  if (isQuizRunning) {
+    // 퀴즈 진행 중이거나 결과 리포트 상태이면 좌측 설정 패널을 숨기고 우측 퀴즈 패널만 풀스크린(최대 3xl)으로 넓혀 중앙 정렬
+    if (DOM.leftPanel) {
+      DOM.leftPanel.classList.add('hidden');
+    }
+    if (DOM.rightPanel) {
+      DOM.rightPanel.classList.remove('hidden');
+      DOM.rightPanel.className = 'flex-1 flex flex-col max-w-3xl mx-auto w-full';
+    }
+  } else {
+    // 대기 상태(첫 로드 등)일 때는 퀴즈 패널을 완전히 숨기고, 좌측 설정 패널만 중앙 정렬(최대 xl)하여 깔끔한 설정 전용 뷰로 사용
+    if (DOM.leftPanel) {
+      DOM.leftPanel.classList.remove('hidden');
+      DOM.leftPanel.className = 'w-full max-w-xl mx-auto flex flex-col gap-4';
+    }
+    if (DOM.rightPanel) {
+      DOM.rightPanel.classList.add('hidden');
+    }
+  }
 }
 
 // ----------------------------------------------------
@@ -268,11 +459,33 @@ function setupEventListeners() {
   // 히스토리 전체삭제
   DOM.clearHistoryBtn.addEventListener('click', clearHistory);
   
-  // API 설정 모달 열기/닫기
-  DOM.apiSettingsBtn.addEventListener('click', () => toggleApiModal(true));
-  DOM.closeApiModalBtn.addEventListener('click', () => toggleApiModal(false));
-  DOM.apiModalOverlay.addEventListener('click', () => toggleApiModal(false));
-  DOM.saveApiKeyBtn.addEventListener('click', saveApiKey);
+  // 커스텀 문항 수 입력 리스너
+  if (DOM.quizCountCustomInput) {
+    DOM.quizCountCustomInput.addEventListener('input', (e) => {
+      // 표준 문항 수 버튼들 active-config 제거
+      document.querySelectorAll('.quiz-config-btn').forEach(btn => btn.classList.remove('active-config'));
+      
+      let val = parseInt(e.target.value);
+      if (isNaN(val) || e.target.value.trim() === '') {
+        // 비어있으면 기본값 3으로 설정하되, active-config는 3문항 버튼에 복원
+        state.config.questionCount = 3;
+        const btn3 = document.querySelector('.quiz-config-btn[data-value="3"]');
+        if (btn3) btn3.classList.add('active-config');
+        return;
+      }
+      
+      // 범위 제한 (최대 20)
+      if (val < 1) {
+        val = 1;
+        e.target.value = 1;
+      } else if (val > 20) {
+        val = 20;
+        e.target.value = 20;
+      }
+      
+      state.config.questionCount = val;
+    });
+  }
   
   // 업로드 소스 탭 전환
   DOM.tabUpload.addEventListener('click', () => switchUploadTab('upload'));
@@ -299,6 +512,13 @@ function setupEventListeners() {
   DOM.nextQuestionBtn.addEventListener('click', () => navigateQuestion(1));
   DOM.retryQuizBtn.addEventListener('click', retryQuiz);
   DOM.newQuizBtn.addEventListener('click', resetToNewQuiz);
+  if (DOM.quitQuizBtn) {
+    DOM.quitQuizBtn.addEventListener('click', () => {
+      if (confirm('퀴즈 풀이를 중단하고 첫 화면으로 돌아가시겠습니까? 현재까지의 진행 상황은 초기화됩니다.')) {
+        resetToNewQuiz();
+      }
+    });
+  }
   
   // 단답형 주관식 실시간 답안 저장 및 엔터키 입력 시 다음 문항 이동
   DOM.shortAnswerInput.addEventListener('input', () => {
@@ -318,7 +538,7 @@ function setupEventListeners() {
 // ----------------------------------------------------
 // 3. UI 및 상태 제어 함수들
 // ----------------------------------------------------
-function toggleTheme() {
+async function toggleTheme() {
   if (DOM.html.classList.contains('dark')) {
     DOM.html.classList.remove('dark');
     state.theme = 'light';
@@ -328,7 +548,7 @@ function toggleTheme() {
     state.theme = 'dark';
     DOM.themeToggleIcon.className = 'fa-solid fa-sun';
   }
-  localStorage.setItem('selqu_theme', state.theme);
+  await saveSetting('selqu_theme', state.theme);
   DOM.html.setAttribute('data-theme', state.theme);
 }
 
@@ -342,30 +562,7 @@ function sidebarToggle(isOpen) {
   }
 }
 
-// API 키 모달 제어
-function toggleApiModal(isOpen) {
-  if (isOpen) {
-    DOM.apiModal.classList.remove('hidden');
-    setTimeout(() => {
-      DOM.apiModalCard.classList.add('modal-active');
-    }, 10);
-  } else {
-    DOM.apiModalCard.classList.remove('modal-active');
-    setTimeout(() => {
-      DOM.apiModal.classList.add('hidden');
-    }, 300);
-  }
-}
 
-function saveApiKey() {
-  const newModel = DOM.apiModelSelect.value;
-  
-  state.config.model = newModel;
-  localStorage.setItem('selqu_api_model', newModel);
-  
-  updateApiStatusIndicator();
-  toggleApiModal(false);
-}
 
 function switchUploadTab(type) {
   if (type === 'upload') {
@@ -375,7 +572,7 @@ function switchUploadTab(type) {
     DOM.textInputContainer.classList.add('hidden');
     
     // 파일 업로드 데이터가 있다면 프리뷰 복원
-    if (state.extractedText && state.currentFile) {
+    if (state.extractedText && state.currentFiles && state.currentFiles.length > 0) {
       DOM.parsedTextPreviewBox.classList.remove('hidden');
     } else {
       DOM.parsedTextPreviewBox.classList.add('hidden');
@@ -670,8 +867,7 @@ function startQuizGenerationProcess() {
 
   // 입력 검증
   if (!state.supabaseUrl || !state.supabaseAnonKey) {
-    alert('퀴즈를 생성하려면 상단 설정에서 Supabase 프록시 정보를 등록해야 합니다.');
-    toggleApiModal(true);
+    alert('Supabase 연결 정보가 유효하지 않습니다.');
     return;
   }
   
@@ -762,13 +958,13 @@ function checkParallelCompletion() {
     }
 
     // 화면 전환
-    DOM.quizIdleState.classList.add('hidden');
     DOM.quizResultState.classList.add('hidden');
     DOM.quizActiveState.classList.remove('hidden');
 
     // 첫 문제 렌더링
     renderQuestion(0);
     saveActiveQuizState();
+    updateLayoutForState();
   }
 }
 
@@ -1174,6 +1370,7 @@ function renderQuizResults(shouldSave = true) {
   
   // 임시 저장 비우기
   clearActiveQuizState();
+  updateLayoutForState();
 
   const totalCount = state.questions.length;
   const correctCount = state.userAnswers.filter(ans => ans.isCorrect || ans.forcedCorrect).length;
@@ -1264,7 +1461,7 @@ window.forceCorrectShortAnswer = function(questionId) {
 };
 
 // 퀴즈 결과 저장
-function saveQuizToHistory(score, correctCount, totalCount) {
+async function saveQuizToHistory(score, correctCount, totalCount) {
   // 대표 타이틀 (첫 번째 문제로 하거나 파일 이름)
   let title = '나만의 퀴즈';
   if (state.currentFiles && state.currentFiles.length > 0) {
@@ -1289,17 +1486,25 @@ function saveQuizToHistory(score, correctCount, totalCount) {
   };
 
   state.history.unshift(record);
-  localStorage.setItem('selqu_history', JSON.stringify(state.history));
+  try {
+    await saveHistoryRecord(record);
+  } catch (e) {
+    console.error('히스토리 저장 실패:', e);
+  }
   renderHistoryList();
 }
 
 // 강제 오버라이드로 변경 시, 최신 히스토리 스코어 갱신
-function updateLastHistoryRecord(newScore, newCorrectCount) {
+async function updateLastHistoryRecord(newScore, newCorrectCount) {
   if (state.history.length > 0) {
     state.history[0].score = newScore;
     state.history[0].correctCount = newCorrectCount;
     state.history[0].userAnswers = JSON.parse(JSON.stringify(state.userAnswers));
-    localStorage.setItem('selqu_history', JSON.stringify(state.history));
+    try {
+      await saveHistoryRecord(state.history[0]);
+    } catch (e) {
+      console.error('히스토리 업데이트 실패:', e);
+    }
     renderHistoryList();
   }
 }
@@ -1346,7 +1551,6 @@ function loadQuizFromHistory(historyItem) {
   state.currentQuestionIndex = 0;
 
   // 화면 상태 갱신
-  DOM.quizIdleState.classList.add('hidden');
   DOM.quizActiveState.classList.add('hidden');
   DOM.quizResultState.classList.remove('hidden');
   
@@ -1355,10 +1559,14 @@ function loadQuizFromHistory(historyItem) {
 }
 
 // 전체 히스토리 삭제
-function clearHistory() {
+async function clearHistory() {
   if (confirm('모든 학습 역사 퀴즈 기록을 삭제하시겠습니까?')) {
     state.history = [];
-    localStorage.removeItem('selqu_history');
+    try {
+      await clearHistoryRecords();
+    } catch (e) {
+      console.error('히스토리 삭제 실패:', e);
+    }
     renderHistoryList();
   }
 }
@@ -1375,11 +1583,11 @@ function retryQuiz() {
   state.currentQuestionIndex = 0;
 
   DOM.quizResultState.classList.add('hidden');
-  DOM.quizIdleState.classList.add('hidden');
   DOM.quizActiveState.classList.remove('hidden');
   
   renderQuestion(0);
   saveActiveQuizState();
+  updateLayoutForState();
 }
 
 // 새로운 퀴즈로 완전히 초기화
@@ -1390,44 +1598,47 @@ function resetToNewQuiz() {
   
   DOM.quizResultState.classList.add('hidden');
   DOM.quizActiveState.classList.add('hidden');
-  DOM.quizIdleState.classList.remove('hidden');
   clearActiveQuizState();
+  updateLayoutForState();
 }
 
 // ----------------------------------------------------
 // 8.5 풀이 상태 임시 저장 및 복원
 // ----------------------------------------------------
-function saveActiveQuizState() {
+async function saveActiveQuizState() {
   if (state.questions && state.questions.length > 0) {
     const activeState = {
+      id: 'active_quiz_state',
       questions: state.questions,
       userAnswers: state.userAnswers,
       currentQuestionIndex: state.currentQuestionIndex,
       extractedText: state.extractedText,
-      currentFilesMeta: state.currentFiles ? state.currentFiles.map(f => ({ name: f.name, size: f.size, type: f.type })) : [],
+      currentFiles: state.currentFiles || [], // 진짜 File 객체들을 직접 저장
       imageParts: state.imageParts
     };
-    localStorage.setItem('selqu_active_quiz', JSON.stringify(activeState));
+    try {
+      await saveHistoryRecord(activeState);
+    } catch (e) {
+      console.error('임시 상태 저장 실패:', e);
+    }
   } else {
-    localStorage.removeItem('selqu_active_quiz');
+    await clearActiveQuizState();
   }
 }
 
-function loadActiveQuizState() {
-  const raw = localStorage.getItem('selqu_active_quiz');
-  if (!raw) return;
+async function loadActiveQuizState() {
   try {
-    const activeState = JSON.parse(raw);
+    const activeState = await getActiveQuizState();
+    if (!activeState) return;
     if (activeState.questions && activeState.questions.length > 0) {
       state.questions = activeState.questions;
       state.userAnswers = activeState.userAnswers;
       state.currentQuestionIndex = activeState.currentQuestionIndex || 0;
       state.extractedText = activeState.extractedText || '';
       state.imageParts = activeState.imageParts || [];
-      state.currentFiles = activeState.currentFilesMeta || [];
+      state.currentFiles = activeState.currentFiles || []; // 진짜 File 객체 복원
       
       // 화면 상태 동기화
-      DOM.quizIdleState.classList.add('hidden');
       DOM.quizResultState.classList.add('hidden');
       DOM.quizActiveState.classList.remove('hidden');
       
@@ -1454,15 +1665,23 @@ function loadActiveQuizState() {
       }
       
       renderQuestion(state.currentQuestionIndex);
+      updateLayoutForState();
     }
   } catch (e) {
     console.error('임시 저장 복원 실패:', e);
-    localStorage.removeItem('selqu_active_quiz');
+    await clearActiveQuizState();
   }
 }
 
-function clearActiveQuizState() {
-  localStorage.removeItem('selqu_active_quiz');
+async function clearActiveQuizState() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.delete('active_quiz_state');
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
 }
 
 // ----------------------------------------------------
