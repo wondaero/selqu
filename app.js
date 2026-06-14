@@ -269,42 +269,7 @@ function setupEventListeners() {
   DOM.apiSettingsBtn.addEventListener('click', () => toggleApiModal(true));
   DOM.closeApiModalBtn.addEventListener('click', () => toggleApiModal(false));
   DOM.apiModalOverlay.addEventListener('click', () => toggleApiModal(false));
-  DOM.toggleApiKeyVisibility.addEventListener('click', toggleApiKeyVisibility);
   DOM.saveApiKeyBtn.addEventListener('click', saveApiKey);
-  
-  // API 설정 입력 이벤트 리스너 및 엔터키 등록
-  DOM.supabaseUrlInput.addEventListener('input', () => {
-    state.supabaseUrl = DOM.supabaseUrlInput.value.trim();
-    if (state.supabaseUrl) {
-      localStorage.setItem('selqu_supabase_url', state.supabaseUrl);
-    } else {
-      localStorage.removeItem('selqu_supabase_url');
-    }
-    updateApiStatusIndicator();
-  });
-
-  DOM.supabaseAnonKeyInput.addEventListener('input', () => {
-    const val = DOM.supabaseAnonKeyInput.value.trim();
-    state.supabaseAnonKey = val;
-    if (val) {
-      localStorage.setItem('selqu_supabase_anon_key', btoa(val));
-    } else {
-      localStorage.removeItem('selqu_supabase_anon_key');
-    }
-    updateApiStatusIndicator();
-  });
-  
-  DOM.supabaseAnonKeyInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      saveApiKey();
-    }
-  });
-
-  DOM.supabaseUrlInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      saveApiKey();
-    }
-  });
   
   // 업로드 소스 탭 전환
   DOM.tabUpload.addEventListener('click', () => switchUploadTab('upload'));
@@ -389,38 +354,11 @@ function toggleApiModal(isOpen) {
   }
 }
 
-function toggleApiKeyVisibility() {
-  const icon = DOM.toggleApiKeyVisibility.querySelector('i');
-  if (DOM.supabaseAnonKeyInput.type === 'password') {
-    DOM.supabaseAnonKeyInput.type = 'text';
-    icon.className = 'fa-solid fa-eye-slash';
-  } else {
-    DOM.supabaseAnonKeyInput.type = 'password';
-    icon.className = 'fa-solid fa-eye';
-  }
-}
-
 function saveApiKey() {
-  let newUrl = DOM.supabaseUrlInput.value.trim();
-  const newAnonKey = DOM.supabaseAnonKeyInput.value.trim();
   const newModel = DOM.apiModelSelect.value;
-  
-  if (!newUrl || !newAnonKey) {
-    alert('Supabase Project URL과 Anon Key를 모두 입력해주세요.');
-    return;
-  }
-  
-  newUrl = getSanitizedSupabaseUrl(newUrl);
-  state.supabaseUrl = newUrl;
-  state.supabaseAnonKey = newAnonKey;
-  
-  localStorage.setItem('selqu_supabase_url', newUrl);
-  localStorage.setItem('selqu_supabase_anon_key', btoa(newAnonKey));
   
   state.config.model = newModel;
   localStorage.setItem('selqu_api_model', newModel);
-  
-  DOM.supabaseUrlInput.value = newUrl;
   
   updateApiStatusIndicator();
   toggleApiModal(false);
