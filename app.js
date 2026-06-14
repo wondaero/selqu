@@ -191,18 +191,21 @@ function initTheme() {
   DOM.html.setAttribute('data-theme', state.theme);
 }
 
-// API (Supabase 프록시) 상태 표시 업데이트
+// API (AI 모델) 상태 표시 업데이트
 function updateApiStatusIndicator() {
   if (state.supabaseUrl && state.supabaseAnonKey) {
     DOM.apiStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse';
-    DOM.apiStatusText.innerText = 'Supabase 연결됨';
-    if (DOM.supabaseUrlInput) DOM.supabaseUrlInput.value = state.supabaseUrl;
-    if (DOM.supabaseAnonKeyInput) DOM.supabaseAnonKeyInput.value = state.supabaseAnonKey;
+    
+    // 모델명 포맷팅
+    let modelLabel = 'Gemini';
+    if (state.config.model === 'gemini-2.5-flash') modelLabel = 'Gemini 2.5 Flash';
+    else if (state.config.model === 'gemini-2.5-pro') modelLabel = 'Gemini 2.5 Pro';
+    else if (state.config.model === 'gemini-2.0-flash') modelLabel = 'Gemini 2.0 Flash';
+    
+    DOM.apiStatusText.innerText = `AI 모델: ${modelLabel}`;
   } else {
     DOM.apiStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-rose-500';
-    DOM.apiStatusText.innerText = 'Supabase 설정 필요';
-    if (DOM.supabaseUrlInput) DOM.supabaseUrlInput.value = '';
-    if (DOM.supabaseAnonKeyInput) DOM.supabaseAnonKeyInput.value = '';
+    DOM.apiStatusText.innerText = 'AI 설정 필요';
   }
   if (DOM.apiModelSelect) {
     DOM.apiModelSelect.value = state.config.model;
