@@ -445,6 +445,13 @@ function switchUploadTab(type) {
     DOM.textInputContainer.classList.remove('hidden');
     DOM.uploadContainer.classList.add('hidden');
     DOM.parsedTextPreviewBox.classList.add('hidden'); // 직접 입력은 굳이 미리보기 노출 안 함
+    
+    // 직접 입력 탭 전환 시 기존 업로드 파일 및 이미지 파트 초기화 (메모리 누수 및 전송 오류 방지)
+    state.imageParts = [];
+    state.currentFiles = [];
+    if (DOM.fileInput) DOM.fileInput.value = '';
+    if (DOM.fileInfoBox) DOM.fileInfoBox.classList.add('hidden');
+    
     state.extractedText = DOM.directText.value;
   }
 }
@@ -828,6 +835,11 @@ function checkParallelCompletion() {
 // 6. Gemini API 연동 및 데이터 생성
 // ----------------------------------------------------
 async function executeQuizGeneration() {
+  const isDirectInput = !DOM.textInputContainer.classList.contains('hidden');
+  if (isDirectInput) {
+    state.extractedText = DOM.directText.value.trim();
+  }
+
   const concept = DOM.quizConceptInput ? DOM.quizConceptInput.value.trim() : '';
 
   // 시스템 프롬프트 및 응답 스키마 지시문
@@ -867,7 +879,8 @@ ${state.extractedText}
 `;
 
   const parts = [{ text: promptText }];
-  if (state.imageParts && state.imageParts.length > 0) {
+  // 직접 입력(텍스트) 탭일 때는 이미지 데이터가 있더라도 제외하고 전송
+  if (!isDirectInput && state.imageParts && state.imageParts.length > 0) {
     state.imageParts.forEach(part => parts.push(part));
   }
 
