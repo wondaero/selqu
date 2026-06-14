@@ -557,11 +557,13 @@ async function handleFiles(filesList) {
     for (const file of files) {
       combinedText += `\n[파일명: ${file.name}]\n`;
       if (file.type.startsWith('image/')) {
-        const base64DataUrl = await fileToBase64(file);
+        // 모바일 사진 등 대용량 이미지 업로드 시 전송 용량 및 토큰 초과(429) 에러 방지를 위한 압축 적용
+        const base64DataUrl = await compressImage(file, 1200, 1200, 0.7);
         const base64Raw = base64DataUrl.split(',')[1];
+        const mimeType = base64DataUrl.split(';')[0].split(':')[1];
         state.imageParts.push({
           inlineData: {
-            mimeType: file.type,
+            mimeType: mimeType,
             data: base64Raw
           }
         });
@@ -647,6 +649,47 @@ function extractTextFromExcel(arrayBuffer) {
   });
   
   return fullText;
+}
+
+// 이미지 압축 헬퍼 (모바일 고용량 사진 대응 및 429 에러 방지)
+function compressImage(file, maxWidth = 1024, maxHeight = 1024, quality = 0.7) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const mimeType = file.type === 'image/png' ? 'image/jpeg' : file.type;
+        const compressedDataUrl = canvas.toDataURL(mimeType, quality);
+        resolve(compressedDataUrl);
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
 }
 
 // 이미지를 Base64 구조로 로드하기
