@@ -370,6 +370,11 @@ async function getSetting(key) {
 // 1. 초기 실행 및 설정 관리
 // ----------------------------------------------------
 async function init() {
+  // 브라우저 뒤로가기 관리를 위한 초기 상태 설정
+  if (history.state === null || !history.state.page) {
+    history.replaceState({ page: 'main' }, '');
+  }
+
   await initTheme();
   
   // Supabase 설정을 비동기식으로 로딩하여 state를 동기화
@@ -601,14 +606,17 @@ function setupEventListeners() {
   DOM.prevQuestionBtn.addEventListener('click', () => navigateQuestion(-1));
   DOM.nextQuestionBtn.addEventListener('click', () => navigateQuestion(1));
   DOM.retryQuizBtn.addEventListener('click', retryQuiz);
-  DOM.newQuizBtn.addEventListener('click', resetToNewQuiz);
+  DOM.newQuizBtn.addEventListener('click', () => resetToNewQuiz(false));
   if (DOM.quitQuizBtn) {
     DOM.quitQuizBtn.addEventListener('click', () => {
       if (confirm('퀴즈 풀이를 중단하고 첫 화면으로 돌아가시겠습니까? 현재까지의 진행 상황은 초기화됩니다.')) {
-        resetToNewQuiz();
+        resetToNewQuiz(false);
       }
     });
   }
+  
+  // 브라우저 뒤로가기 감지 리스너 등록
+  window.addEventListener('popstate', handlePopState);
   
   // 단답형 주관식 실시간 답안 저장 및 엔터키 입력 시 다음 문항 이동
   DOM.shortAnswerInput.addEventListener('input', () => {
@@ -1055,6 +1063,11 @@ function checkParallelCompletion() {
     renderQuestion(0);
     saveActiveQuizState();
     updateLayoutForState();
+
+    // 퀴즈 화면 진입에 따른 뒤로가기 스택 push
+    if (history.state?.page !== 'quiz') {
+      history.pushState({ page: 'quiz' }, '');
+    }
   }
 }
 
@@ -1646,6 +1659,11 @@ function loadQuizFromHistory(historyItem) {
   
   renderQuizResults(false);
   sidebarToggle(false); // 모바일 편의성
+
+  // 히스토리에 퀴즈 상태 기록
+  if (history.state?.page !== 'quiz') {
+    history.pushState({ page: 'quiz' }, '');
+  }
 }
 
 // 전체 히스토리 삭제
@@ -1678,10 +1696,15 @@ function retryQuiz() {
   renderQuestion(0);
   saveActiveQuizState();
   updateLayoutForState();
+
+  // 히스토리에 퀴즈 상태 기록
+  if (history.state?.page !== 'quiz') {
+    history.pushState({ page: 'quiz' }, '');
+  }
 }
 
 // 새로운 퀴즈로 완전히 초기화
-function resetToNewQuiz() {
+function resetToNewQuiz(isFromPopState = false) {
   state.questions = [];
   state.userAnswers = [];
   state.currentQuestionIndex = 0;
@@ -1690,6 +1713,11 @@ function resetToNewQuiz() {
   DOM.quizActiveState.classList.add('hidden');
   clearActiveQuizState();
   updateLayoutForState();
+
+  // 화면 버튼 클릭으로 메인에 온 경우, 브라우저 히스토리 스택을 main으로 싱크 맞춤
+  if (!isFromPopState && history.state?.page === 'quiz') {
+    history.back();
+  }
 }
 
 // ----------------------------------------------------
@@ -1756,10 +1784,51 @@ async function loadActiveQuizState() {
       
       renderQuestion(state.currentQuestionIndex);
       updateLayoutForState();
+
+      // 임시 저장 복원 시에도 뒤로가기 스택 설정
+      if (history.state?.page !== 'quiz') {
+        history.pushState({ page: 'quiz' }, '');
+      }
     }
   } catch (e) {
     console.error('임시 저장 복원 실패:', e);
     await clearActiveQuizState();
+  }
+}
+
+// 브라우저 및 기기 물리 뒤로가기 핸들러
+async function handlePopState(event) {
+  const page = event.state ? event.state.page : null;
+  
+  // 뒤로가기 시 page 상태가 main이 되거나 없어지는 경우
+  if (!page || page === 'main') {
+    const isQuizRunning = (state.questions && state.questions.length > 0) &&
+                          (!DOM.quizActiveState.classList.contains('hidden') || 
+                           !DOM.quizResultState.classList.contains('hidden'));
+    
+    if (isQuizRunning) {
+      // 퀴즈 결과 리포트 화면일 때는 확인창 없이 바로 메인으로 전환
+      if (!DOM.quizResultState.classList.contains('hidden')) {
+        resetToNewQuiz(true);
+      } else {
+        // 퀴즈 풀이 도중 이탈하려는 경우 퀴즈 중단 여부 확인
+        if (confirm('퀴즈 풀이를 중단하고 첫 화면으로 돌아가시겠습니까? 현재까지의 진행 상황은 초기화됩니다.')) {
+          resetToNewQuiz(true);
+        } else {
+          // 취소 시 현재 뒤로가기 동작을 무효화하기 위해 다시 퀴즈 상태를 스택에 넣어줌
+          history.pushState({ page: 'quiz' }, '');
+        }
+      }
+    } else {
+      // 메인 화면 상태에서 한 번 더 뒤로가기를 하려는 경우
+      if (confirm('selQu 서비스를 종료(이탈)하시겠습니까?')) {
+        // 실제 뒤로가기를 한 번 더 유발하여 앱/페이지를 완전히 나감
+        history.back();
+      } else {
+        // 이탈 취소 시 메인 스택을 다시 밀어넣어 고정
+        history.pushState({ page: 'main' }, '');
+      }
+    }
   }
 }
 
