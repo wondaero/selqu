@@ -280,3 +280,50 @@ body {
     display: none !important;
   }
 }
+
+/* 초소형 모바일 기기 (너비 340px 이하, 갤럭시 폴드 등) 대응 여백 최적화 */
+@media (max-width: 340px) {
+  /* 메인 콘텐츠 바깥 여백 최소화 */
+  main {
+    padding: 0.5rem !important;
+    gap: 0.75rem !important;
+  }
+
+  /* 각종 카드(.glass) 패딩 축소 */
+  .glass {
+    padding: 0.875rem !important; /* 기존 p-5(20px) -> p-3.5(14px) 수준으로 축소 */
+    border-radius: 1rem !important; /* 모서리 곡률 조절 */
+  }
+
+  /* 문제 카드 여백 정밀 축소 */
+  #questionCard {
+    padding: 1rem 0.875rem !important;
+  }
+
+  /* 퀴즈 보기 버튼 패딩 및 폰트 최적화 */
+  .option-btn {
+    padding: 0.75rem 0.875rem !important;
+    font-size: 0.8125rem !important; /* 13px */
+    gap: 0.5rem !important;
+  }
+
+  .option-badge {
+    width: 1.5rem !important;
+    height: 1.5rem !important;
+  }
+
+  /* 문제 텍스트 크기 조절 (강제 개행 최소화) */
+  #questionText {
+    font-size: 0.95rem !important;
+    line-height: 1.4 !important;
+  }
+
+  /* 옵션 설정 버튼들의 글자 크기 축소 */
+  .quiz-config-btn,
+  .difficulty-config-btn,
+  .type-config-btn {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+    font-size: 0.6875rem !important; /* 11px */
+  }
+}
