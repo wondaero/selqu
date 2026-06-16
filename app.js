@@ -177,103 +177,193 @@ let dbInstance = null;
 function openDB() {
   if (dbInstance) return Promise.resolve(dbInstance);
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-      }
-    };
-    request.onsuccess = (e) => {
-      dbInstance = e.target.result;
-      resolve(dbInstance);
-    };
-    request.onerror = (e) => reject(e.target.error);
+    try {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        }
+      };
+      request.onsuccess = (e) => {
+        dbInstance = e.target.result;
+        resolve(dbInstance);
+      };
+      request.onerror = (e) => reject(e.target.error);
+    } catch (err) {
+      reject(err);
+    }
   });
 }
 
 async function getHistory() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readonly');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.getAll();
-    request.onsuccess = () => {
-      // 내림차순 정렬 (최신 기록이 맨 위로) 단, ID가 숫자 타입인 실제 히스토리 레코드만 필터링
-      const list = (request.result || []).filter(item => typeof item.id === 'number');
-      list.sort((a, b) => b.id - a.id);
-      resolve(list);
-    };
-    request.onerror = () => reject(request.error);
-  });
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.getAll();
+      request.onsuccess = () => {
+        // 내림차순 정렬 (최신 기록이 맨 위로) 단, ID가 숫자 타입인 실제 히스토리 레코드만 필터링
+        const list = (request.result || []).filter(item => typeof item.id === 'number');
+        list.sort((a, b) => b.id - a.id);
+        resolve(list);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.warn('IndexedDB getHistory 실패, LocalStorage에서 복원합니다.', e);
+    const fallbackHistory = localStorage.getItem('selqu_fallback_history');
+    if (!fallbackHistory) return [];
+    try {
+      return JSON.parse(fallbackHistory);
+    } catch (parseErr) {
+      return [];
+    }
+  }
 }
 
 async function getActiveQuizState() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readonly');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.get('active_quiz_state');
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.get('active_quiz_state');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.warn('IndexedDB getActiveQuizState 실패, LocalStorage에서 복원합니다.', e);
+    const val = localStorage.getItem('selqu_fallback_active_quiz');
+    if (!val) return null;
+    try {
+      return JSON.parse(val);
+    } catch (parseErr) {
+      return null;
+    }
+  }
 }
 
 async function saveHistoryRecord(record) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.put(record);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.put(record);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.warn('IndexedDB saveHistoryRecord 실패, LocalStorage를 사용합니다.', e);
+    if (record.id === 'active_quiz_state') {
+      const fallbackActiveState = { ...record };
+      if (fallbackActiveState.currentFiles) {
+        fallbackActiveState.currentFiles = fallbackActiveState.currentFiles.map(f => ({
+          name: f.name,
+          size: f.size,
+          type: f.type,
+          isFallbackMeta: true
+        }));
+      }
+      localStorage.setItem('selqu_fallback_active_quiz', JSON.stringify(fallbackActiveState));
+      return;
+    }
+    
+    // 일반 히스토리 레코드 처리
+    const historyList = await getHistory();
+    const idx = historyList.findIndex(item => item.id === record.id);
+    if (idx !== -1) {
+      historyList[idx] = record;
+    } else {
+      historyList.unshift(record);
+    }
+    localStorage.setItem('selqu_fallback_history', JSON.stringify(historyList));
+  }
 }
 
 async function clearHistoryRecords() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
-    
-    // 실제 히스토리 데이터(ID가 숫자형)만 삭제합니다.
-    const request = store.openCursor();
-    request.onsuccess = (e) => {
-      const cursor = e.target.result;
-      if (cursor) {
-        if (typeof cursor.key === 'number') {
-          cursor.delete();
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      
+      // 실제 히스토리 데이터(ID가 숫자형)만 삭제합니다.
+      const request = store.openCursor();
+      request.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          if (typeof cursor.key === 'number') {
+            cursor.delete();
+          }
+          cursor.continue();
+        } else {
+          resolve();
         }
-        cursor.continue();
-      } else {
-        resolve();
-      }
-    };
-    request.onerror = () => reject(request.error);
-  });
+      };
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.warn('IndexedDB clearHistoryRecords 실패, LocalStorage 데이터를 삭제합니다.', e);
+    localStorage.removeItem('selqu_fallback_history');
+  }
+}
+
+async function clearActiveQuizState() {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.delete('active_quiz_state');
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.warn('IndexedDB clearActiveQuizState 실패, LocalStorage 데이터를 삭제합니다.', e);
+    localStorage.removeItem('selqu_fallback_active_quiz');
+  }
 }
 
 // 설정 관련 헬퍼 함수
 async function saveSetting(key, val) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.put({ id: key, value: val });
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.put({ id: key, value: val });
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.warn(`IndexedDB saveSetting 실패 ('${key}'), LocalStorage로 폴백합니다.`, e);
+    localStorage.setItem('selqu_fallback_' + key, JSON.stringify(val));
+  }
 }
 
 async function getSetting(key) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readonly');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.get(key);
-    request.onsuccess = () => resolve(request.result ? request.result.value : null);
-    request.onerror = () => reject(request.error);
-  });
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.get(key);
+      request.onsuccess = () => resolve(request.result ? request.result.value : null);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.warn(`IndexedDB getSetting 실패 ('${key}'), LocalStorage에서 복원합니다.`, e);
+    const val = localStorage.getItem('selqu_fallback_' + key);
+    if (val === null) return null;
+    try {
+      return JSON.parse(val);
+    } catch (parseErr) {
+      return val;
+    }
+  }
 }
 
 // ----------------------------------------------------
@@ -1671,17 +1761,6 @@ async function loadActiveQuizState() {
     console.error('임시 저장 복원 실패:', e);
     await clearActiveQuizState();
   }
-}
-
-async function clearActiveQuizState() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.delete('active_quiz_state');
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
 }
 
 // ----------------------------------------------------
