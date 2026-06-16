@@ -7,6 +7,14 @@
   <meta name="description" content="문서, 이미지, 엑셀, 텍스트 파일에서 내용을 추출하여 나만의 맞춤 AI 퀴즈를 만들고 학습하세요.">
   
   <!-- Tailwind CSS CDN -->
+  <script>
+    // Tailwind CDN production 경고 메세지 무시
+    const originalWarn = console.warn;
+    console.warn = function(...args) {
+      if (args[0] && typeof args[0] === 'string' && args[0].includes('cdn.tailwindcss.com')) return;
+      originalWarn.apply(console, args);
+    };
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -55,9 +63,12 @@
           <i class="fa-solid fa-clock-rotate-left text-indigo-500"></i>
           <span>학습 기록</span>
         </h2>
-        <button id="closeSidebarBtn" class="md:hidden text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
-          <i class="fa-solid fa-xmark text-xl"></i>
-        </button>
+        <div class="flex items-center gap-2">
+          <button id="toggleEditModeBtn" class="text-xs font-bold text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300">선택 삭제</button>
+          <button id="closeSidebarBtn" class="md:hidden text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+            <i class="fa-solid fa-xmark text-xl"></i>
+          </button>
+        </div>
       </div>
       
       <!-- 히스토리 목록 -->
@@ -73,6 +84,9 @@
       <div class="p-4 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
         <button id="clearHistoryBtn" class="text-xs text-red-500 hover:text-red-600 dark:hover:text-red-400 flex items-center gap-1">
           <i class="fa-solid fa-trash"></i> 전체 삭제
+        </button>
+        <button id="deleteSelectedBtn" class="text-xs text-red-500 hover:text-red-600 dark:hover:text-red-400 flex items-center gap-1 hidden">
+          <i class="fa-solid fa-trash-can"></i> 선택 삭제 (0)
         </button>
         <span class="text-[10px] text-slate-400 dark:text-slate-500">selQ v1.0.0</span>
       </div>

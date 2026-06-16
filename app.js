@@ -75,6 +75,9 @@ const state = {
   questions: [],
   userAnswers: [], // { questionId, selectedAnswer, isCorrect, forcedCorrect }
   currentQuestionIndex: 0,
+  currentActiveQuizId: null, // 현재 진행 중인 퀴즈 ID (indexedDB ID 매핑용)
+  editModeActive: false,     // 선택 삭제 편집 모드 활성화 여부
+  selectedQuizIds: new Set(), // 선택 삭제용 선택된 퀴즈 ID들
   
   // 퀴즈 생성 설정
   config: {
@@ -101,6 +104,8 @@ const DOM = {
   historySidebar: document.getElementById('historySidebar'),
   historyList: document.getElementById('historyList'),
   clearHistoryBtn: document.getElementById('clearHistoryBtn'),
+  toggleEditModeBtn: document.getElementById('toggleEditModeBtn'),
+  deleteSelectedBtn: document.getElementById('deleteSelectedBtn'),
   emptyHistory: document.getElementById('emptyHistory'),
   
   quizCountCustomInput: document.getElementById('quizCountCustomInput'),
@@ -564,6 +569,14 @@ function setupEventListeners() {
   // 히스토리 전체삭제
   DOM.clearHistoryBtn.addEventListener('click', clearHistory);
   
+  // 선택 삭제 편집 모드 토글 및 실행
+  if (DOM.toggleEditModeBtn) {
+    DOM.toggleEditModeBtn.addEventListener('click', toggleEditMode);
+  }
+  if (DOM.deleteSelectedBtn) {
+    DOM.deleteSelectedBtn.addEventListener('click', deleteSelectedHistoryRecords);
+  }
+  
   // 커스텀 문항 수 입력 리스너
   if (DOM.quizCountCustomInput) {
     DOM.quizCountCustomInput.addEventListener('input', (e) => {
@@ -619,7 +632,7 @@ function setupEventListeners() {
   DOM.newQuizBtn.addEventListener('click', () => resetToNewQuiz(false));
   if (DOM.quitQuizBtn) {
     DOM.quitQuizBtn.addEventListener('click', () => {
-      if (confirm('퀴즈 풀이를 중단하고 첫 화면으로 돌아가시겠습니까? 현재까지의 진행 상황은 초기화됩니다.')) {
+      if (confirm('퀴즈 중간에 나가시겠습니까? 작성 중인 진행 상황은 안전하게 임시 저장되므로 걱정하지 마세요!')) {
         resetToNewQuiz(false);
       }
     });
@@ -628,17 +641,33 @@ function setupEventListeners() {
   // 브라우저 뒤로가기 감지 리스너 등록
   window.addEventListener('popstate', handlePopState);
   
-  // 단답형 주관식 실시간 답안 저장 및 엔터키 입력 시 다음 문항 이동
+  // 단답형 주관식 실시간 답안 상태 동기화 및 blur/Enter/문항이동 시점에만 안전하게 저장
   DOM.shortAnswerInput.addEventListener('input', () => {
     const val = DOM.shortAnswerInput.value.trim();
     state.userAnswers[state.currentQuestionIndex].selectedAnswer = val || null;
     renderQuestionMap();
-    saveActiveQuizState();
+  });
+  DOM.shortAnswerInput.addEventListener('blur', () => {
+    const val = DOM.shortAnswerInput.value.trim();
+    state.userAnswers[state.currentQuestionIndex].selectedAnswer = val || null;
+    renderQuestionMap();
+    saveActiveQuizState(); // 포커스 아웃 시 즉시 저장
+    checkQuizCompletionAndPrompt();
   });
   DOM.shortAnswerInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      navigateQuestion(1);
+      const val = DOM.shortAnswerInput.value.trim();
+      state.userAnswers[state.currentQuestionIndex].selectedAnswer = val || null;
+      renderQuestionMap();
+      saveActiveQuizState(); // 엔터 입력 시 즉시 저장
+      
+      const isAllAnswered = state.userAnswers.every(ans => ans.selectedAnswer !== null && String(ans.selectedAnswer).trim() !== '');
+      if (isAllAnswered && state.currentQuestionIndex !== state.questions.length - 1) {
+        checkQuizCompletionAndPrompt();
+      } else {
+        navigateQuestion(1);
+      }
     }
   });
 }
@@ -1065,6 +1094,37 @@ function checkParallelCompletion() {
       return;
     }
 
+    // 퀴즈 고유 ID 생성 및 등록
+    state.currentActiveQuizId = Date.now();
+    let title = '나만의 퀴즈';
+    if (state.currentFiles && state.currentFiles.length > 0) {
+      if (state.currentFiles.length === 1) {
+        title = state.currentFiles[0].name;
+      } else {
+        title = `${state.currentFiles[0].name} 외 ${state.currentFiles.length - 1}개 파일`;
+      }
+    } else if (state.extractedText) {
+      title = state.extractedText.slice(0, 15) + '... 퀴즈';
+    }
+
+    const record = {
+      id: state.currentActiveQuizId,
+      title: title,
+      date: new Date().toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      score: null, // 진행 중
+      correctCount: 0,
+      totalCount: state.questions.length,
+      answeredCount: 0, // 시간 복잡도 O(N) 최적화를 위한 풀이 개수 캐시
+      questions: JSON.parse(JSON.stringify(state.questions)),
+      userAnswers: JSON.parse(JSON.stringify(state.userAnswers))
+    };
+
+    state.history.unshift(record);
+    saveHistoryRecord(record).catch(err => {
+      console.error('진행 중 히스토리 저장 실패:', err);
+    });
+    renderHistoryList();
+
     // 화면 전환
     DOM.quizResultState.classList.add('hidden');
     DOM.quizActiveState.classList.remove('hidden');
@@ -1218,7 +1278,7 @@ function renderQuestion(index) {
   renderQuestionMap();
 
   // 문제 카드 내용 바인딩
-  DOM.questionNumber.innerText = `QUESTION 0${index + 1}`;
+  DOM.questionNumber.innerText = `QUESTION ${String(index + 1).padStart(2, '0')}`;
   DOM.questionTypeBadge.innerText = question.type === 'mcq' ? '객관식' : question.type === 'tf' ? 'OX 퀴즈' : '단답형';
   DOM.questionText.innerText = question.question;
 
@@ -1319,12 +1379,9 @@ function submitMultipleChoiceAnswer(selectedOpt, clickedBtn) {
   // 문항 지도 번호판 상태 새로고침
   renderQuestionMap();
   saveActiveQuizState();
+  checkQuizCompletionAndPrompt();
 }
 
-// 주관식 단답형 답변 제출 (사용하지 않음 - 자동 실시간 저장으로 대체)
-function submitShortAnswer() {
-  // 하위 호환 및 에러 방지용 빈 함수로 유지
-}
 
 // 실시간 해설 패널 열기 (리포트용으로만 사용됨)
 function showExplanation(isCorrect, correctAnswer, explanationText) {
@@ -1366,6 +1423,23 @@ function navigateQuestion(direction) {
     showInterstitialAd(() => {
       executeQuizGradingAndRenderResults();
     });
+  }
+}
+
+// 중간 문항 풀이 완료 시 자동 제출 제안
+function checkQuizCompletionAndPrompt() {
+  const isAllAnswered = state.userAnswers.every(ans => ans.selectedAnswer !== null && String(ans.selectedAnswer).trim() !== '');
+  if (isAllAnswered) {
+    // 마지막 문항에 이미 도달해 있는 경우 중복 confirm 방지
+    if (state.currentQuestionIndex === state.questions.length - 1) return;
+    
+    setTimeout(() => {
+      if (confirm('모든 문항을 완료했습니다! 최종 제출하여 채점 결과를 확인하시겠습니까?')) {
+        showInterstitialAd(() => {
+          executeQuizGradingAndRenderResults();
+        });
+      }
+    }, 300);
   }
 }
 
@@ -1587,23 +1661,53 @@ async function saveQuizToHistory(score, correctCount, totalCount) {
     title = state.extractedText.slice(0, 15) + '... 퀴즈';
   }
 
-  const record = {
-    id: Date.now(),
-    title: title,
-    date: new Date().toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-    score: score,
-    correctCount: correctCount,
-    totalCount: totalCount,
-    questions: JSON.parse(JSON.stringify(state.questions)),
-    userAnswers: JSON.parse(JSON.stringify(state.userAnswers))
-  };
-
-  state.history.unshift(record);
-  try {
-    await saveHistoryRecord(record);
-  } catch (e) {
-    console.error('히스토리 저장 실패:', e);
+  let recordIndex = -1;
+  if (state.currentActiveQuizId) {
+    recordIndex = state.history.findIndex(item => item.id === state.currentActiveQuizId);
   }
+
+  if (recordIndex !== -1) {
+    // 기존 진행 중인 레코드 업데이트
+    const record = state.history[recordIndex];
+    record.score = score;
+    record.correctCount = correctCount;
+    record.totalCount = totalCount;
+    record.answeredCount = totalCount; // 완결되었으므로 진행률은 전체 문항과 동일
+    record.questions = JSON.parse(JSON.stringify(state.questions));
+    record.userAnswers = JSON.parse(JSON.stringify(state.userAnswers));
+    
+    // 최근에 제출된 것을 목록의 맨 위(최신순)로 이동시키기 위해 배열에서 제거 후 unshift
+    state.history.splice(recordIndex, 1);
+    state.history.unshift(record);
+
+    try {
+      await saveHistoryRecord(record);
+    } catch (e) {
+      console.error('히스토리 업데이트 실패:', e);
+    }
+  } else {
+    // 진행 중 레코드가 없거나 누락된 경우 새로 작성
+    const record = {
+      id: Date.now(),
+      title: title,
+      date: new Date().toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      score: score,
+      correctCount: correctCount,
+      totalCount: totalCount,
+      answeredCount: totalCount, // 완결되었으므로 진행률은 전체 문항과 동일
+      questions: JSON.parse(JSON.stringify(state.questions)),
+      userAnswers: JSON.parse(JSON.stringify(state.userAnswers))
+    };
+
+    state.history.unshift(record);
+    try {
+      await saveHistoryRecord(record);
+    } catch (e) {
+      console.error('히스토리 저장 실패:', e);
+    }
+  }
+  
+  state.currentActiveQuizId = null; // 완료된 세션 ID 초기화
   renderHistoryList();
 }
 
@@ -1628,31 +1732,103 @@ function renderHistoryList() {
   
   if (state.history.length === 0) {
     DOM.emptyHistory.classList.remove('hidden');
+    // 편집 모드 비활성화 및 토글 버튼 숨기기
+    if (DOM.toggleEditModeBtn) DOM.toggleEditModeBtn.classList.add('hidden');
+    if (DOM.deleteSelectedBtn) DOM.deleteSelectedBtn.classList.add('hidden');
+    if (DOM.clearHistoryBtn) DOM.clearHistoryBtn.classList.remove('hidden');
+    state.editModeActive = false;
     return;
   }
   
   DOM.emptyHistory.classList.add('hidden');
+  if (DOM.toggleEditModeBtn) DOM.toggleEditModeBtn.classList.remove('hidden');
   
   state.history.forEach(item => {
     const card = document.createElement('div');
-    card.className = 'p-3 bg-slate-50 border border-slate-200 rounded-xl hover:border-indigo-400 dark:bg-slate-800/40 dark:border-slate-800 hover:dark:border-indigo-500 cursor-pointer transition-all flex flex-col gap-1.5';
+    card.className = 'p-3 bg-slate-50 border border-slate-200 rounded-xl hover:border-indigo-400 dark:bg-slate-800/40 dark:border-slate-800 hover:dark:border-indigo-500 cursor-pointer transition-all flex items-center gap-2';
     
-    // 점수 등급 서식
-    const scoreColorClass = item.score >= 80 ? 'text-emerald-500' : item.score >= 50 ? 'text-amber-500' : 'text-rose-500';
+    // 점수 텍스트 또는 진행중 배지 생성
+    let scoreBadgeHtml = '';
+    if (item.score === null) {
+      scoreBadgeHtml = `<span class="badge-ongoing">진행 중</span>`;
+    } else {
+      const scoreColorClass = item.score >= 80 ? 'text-emerald-500' : item.score >= 50 ? 'text-amber-500' : 'text-rose-500';
+      scoreBadgeHtml = `<span class="text-xs font-black ${scoreColorClass} flex-shrink-0">${item.score}점</span>`;
+    }
+
+    // OX 퀴즈, 객관식, 단답형 채점 여부
+    const rightSubInfoHtml = item.score === null 
+      ? `<span>진행률: ${item.answeredCount || 0}/${item.totalCount}</span>`
+      : `<span>정답: ${item.correctCount}/${item.totalCount}</span>`;
+
+    // 체크박스 마크업
+    const checkboxHtml = state.editModeActive 
+      ? `<input type="checkbox" class="quiz-select-checkbox" data-id="${item.id}" ${state.selectedQuizIds.has(item.id) ? 'checked' : ''}>` 
+      : '';
+
+    // 개별 삭제 버튼 마크업
+    const deleteBtnHtml = !state.editModeActive 
+      ? `<button class="delete-single-btn text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors" data-id="${item.id}">
+          <i class="fa-solid fa-trash-can text-xs"></i>
+         </button>` 
+      : '';
 
     card.innerHTML = `
-      <div class="flex items-center justify-between gap-1.5">
-        <span class="text-xs font-bold truncate text-slate-700 dark:text-slate-300 flex-1">${item.title}</span>
-        <span class="text-xs font-black ${scoreColorClass} flex-shrink-0">${item.score}점</span>
+      ${checkboxHtml}
+      <div class="flex-1 min-w-0 flex flex-col gap-1">
+        <div class="flex items-center justify-between gap-1.5">
+          <span class="text-xs font-bold truncate text-slate-700 dark:text-slate-300 flex-1">${item.title}</span>
+          ${scoreBadgeHtml}
+        </div>
+        <div class="flex items-center justify-between text-[10px] text-slate-400">
+          <span>${item.date}</span>
+          ${rightSubInfoHtml}
+        </div>
       </div>
-      <div class="flex items-center justify-between text-[10px] text-slate-400">
-        <span>${item.date}</span>
-        <span>정답: ${item.correctCount}/${item.totalCount}</span>
-      </div>
+      ${deleteBtnHtml}
     `;
     
-    // 클릭 시 역대 퀴즈 로드
-    card.addEventListener('click', () => loadQuizFromHistory(item));
+    // 카드 클릭 핸들러
+    card.addEventListener('click', (e) => {
+      // 만약 체크박스나 개별 삭제 버튼 자체를 직접 누른 거라면 중복 처리 방지
+      if (e.target.closest('.quiz-select-checkbox')) {
+        toggleQuizSelection(item.id);
+        return;
+      }
+      if (e.target.closest('.delete-single-btn')) {
+        e.stopPropagation();
+        deleteHistoryRecord(item.id);
+        return;
+      }
+      
+      // 편집 모드 중이면 카드를 클릭해도 체크박스 토글로 동작
+      if (state.editModeActive) {
+        toggleQuizSelection(item.id);
+        const cb = card.querySelector('.quiz-select-checkbox');
+        if (cb) cb.checked = state.selectedQuizIds.has(item.id);
+      } else {
+        loadQuizFromHistory(item);
+      }
+    });
+
+    // 만약 체크박스가 렌더링된 상태에서 체크박스 자체 클릭 시 전파 방지
+    const cb = card.querySelector('.quiz-select-checkbox');
+    if (cb) {
+      cb.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleQuizSelection(item.id);
+      });
+    }
+
+    // 개별 삭제 버튼 이벤트 전파 방지 및 핸들러 연결
+    const db = card.querySelector('.delete-single-btn');
+    if (db) {
+      db.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteHistoryRecord(item.id);
+      });
+    }
+
     DOM.historyList.appendChild(card);
   });
 }
@@ -1661,18 +1837,35 @@ function renderHistoryList() {
 function loadQuizFromHistory(historyItem) {
   state.questions = JSON.parse(JSON.stringify(historyItem.questions));
   state.userAnswers = JSON.parse(JSON.stringify(historyItem.userAnswers));
-  state.currentQuestionIndex = 0;
+  state.currentQuestionIndex = historyItem.currentQuestionIndex || 0; // 진행 중이었던 인덱스 복원
 
-  // 화면 상태 갱신
-  DOM.quizActiveState.classList.add('hidden');
-  DOM.quizResultState.classList.remove('hidden');
-  
-  renderQuizResults(false);
-  sidebarToggle(false); // 모바일 편의성
+  if (historyItem.score === null) {
+    // 진행 중인 퀴즈인 경우
+    state.currentActiveQuizId = historyItem.id;
+    DOM.quizResultState.classList.add('hidden');
+    DOM.quizActiveState.classList.remove('hidden');
+    
+    renderQuestion(state.currentQuestionIndex);
+    saveActiveQuizState(); // active_quiz_state 레코드도 동기화
+    updateLayoutForState();
+    
+    sidebarToggle(false); // 모바일 편의성
+    
+    if (history.state?.page !== 'quiz') {
+      history.pushState({ page: 'quiz' }, '');
+    }
+  } else {
+    // 완료된 퀴즈인 경우
+    state.currentActiveQuizId = null;
+    DOM.quizActiveState.classList.add('hidden');
+    DOM.quizResultState.classList.remove('hidden');
+    
+    renderQuizResults(false);
+    sidebarToggle(false); // 모바일 편의성
 
-  // 히스토리에 퀴즈 상태 기록
-  if (history.state?.page !== 'quiz') {
-    history.pushState({ page: 'quiz' }, '');
+    if (history.state?.page !== 'quiz') {
+      history.pushState({ page: 'quiz' }, '');
+    }
   }
 }
 
@@ -1685,7 +1878,145 @@ async function clearHistory() {
     } catch (e) {
       console.error('히스토리 삭제 실패:', e);
     }
+    
+    // 현재 진행 중이거나 보여주는 퀴즈가 있다면 초기화
+    resetToNewQuiz(false);
     renderHistoryList();
+  }
+}
+
+// 개별 선택 토글 헬퍼
+function toggleQuizSelection(id) {
+  if (state.selectedQuizIds.has(id)) {
+    state.selectedQuizIds.delete(id);
+  } else {
+    state.selectedQuizIds.add(id);
+  }
+  updateSelectedDeleteBtnText();
+}
+
+// 선택 삭제 버튼 텍스트 업데이트
+function updateSelectedDeleteBtnText() {
+  if (DOM.deleteSelectedBtn) {
+    DOM.deleteSelectedBtn.innerText = `선택 삭제 (${state.selectedQuizIds.size})`;
+  }
+}
+
+// 편집 모드 토글
+function toggleEditMode() {
+  state.editModeActive = !state.editModeActive;
+  state.selectedQuizIds.clear();
+  
+  if (state.editModeActive) {
+    if (DOM.toggleEditModeBtn) DOM.toggleEditModeBtn.innerText = '취소';
+    if (DOM.clearHistoryBtn) DOM.clearHistoryBtn.classList.add('hidden');
+    if (DOM.deleteSelectedBtn) {
+      DOM.deleteSelectedBtn.classList.remove('hidden');
+      updateSelectedDeleteBtnText();
+    }
+  } else {
+    if (DOM.toggleEditModeBtn) DOM.toggleEditModeBtn.innerText = '선택 삭제';
+    if (DOM.clearHistoryBtn) DOM.clearHistoryBtn.classList.remove('hidden');
+    if (DOM.deleteSelectedBtn) DOM.deleteSelectedBtn.classList.add('hidden');
+  }
+  renderHistoryList();
+}
+
+// 개별 삭제 로직
+async function deleteHistoryRecord(id) {
+  if (confirm('이 퀴즈 기록을 삭제하시겠습니까?')) {
+    state.history = state.history.filter(item => item.id !== id);
+    try {
+      await deleteHistoryRecordFromDB(id);
+    } catch (e) {
+      console.error('기록 삭제 실패:', e);
+    }
+    
+    // 만약 지우는 퀴즈가 현재 열려있는 퀴즈라면 초기화
+    if (state.currentActiveQuizId === id) {
+      resetToNewQuiz(false);
+    }
+    renderHistoryList();
+  }
+}
+
+// DB에서 개별 삭제 처리 (IndexedDB 및 Fallback)
+async function deleteHistoryRecordFromDB(id) {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.delete(id);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.warn('IndexedDB deleteHistoryRecordFromDB 실패, LocalStorage 데이터를 삭제합니다.', e);
+    const historyList = await getHistory();
+    const updated = historyList.filter(item => item.id !== id);
+    localStorage.setItem('selq_fallback_history', JSON.stringify(updated));
+  }
+}
+
+// 선택된 항목 일괄 삭제 (O(1) 단일 트랜잭션 오픈으로 성능 최적화)
+async function deleteSelectedHistoryRecords() {
+  if (state.selectedQuizIds.size === 0) {
+    alert('삭제할 항목을 선택해주세요.');
+    return;
+  }
+  
+  if (confirm(`선택한 ${state.selectedQuizIds.size}개의 퀴즈 기록을 삭제하시겠습니까?`)) {
+    const idsToDelete = Array.from(state.selectedQuizIds);
+    
+    // 메모리 내 배열 제거
+    state.history = state.history.filter(item => !state.selectedQuizIds.has(item.id));
+    
+    // 단일 트랜잭션으로 일괄 DB 제거 진행
+    try {
+      await deleteMultipleHistoryRecordsFromDB(idsToDelete);
+    } catch (e) {
+      console.error('일괄 삭제 작업 중 에러 발생:', e);
+    }
+    
+    // 만약 현재 열려있는 진행 중인 퀴즈가 삭제 대상에 포함된다면 초기화
+    if (idsToDelete.includes(state.currentActiveQuizId)) {
+      resetToNewQuiz(false);
+    }
+    
+    // 모드 리셋
+    state.selectedQuizIds.clear();
+    state.editModeActive = false;
+    if (DOM.toggleEditModeBtn) DOM.toggleEditModeBtn.innerText = '선택 삭제';
+    if (DOM.clearHistoryBtn) DOM.clearHistoryBtn.classList.remove('hidden');
+    if (DOM.deleteSelectedBtn) DOM.deleteSelectedBtn.classList.add('hidden');
+    
+    renderHistoryList();
+  }
+}
+
+// DB에서 복수 항목 일괄 삭제 처리 (IndexedDB 단일 트랜잭션 최적화 및 Fallback)
+async function deleteMultipleHistoryRecordsFromDB(ids) {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      
+      // 트랜잭션 전체가 정상 커밋 및 완료되었을 때 resolve
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = (e) => reject(e.target.error);
+      
+      // 단일 트랜잭션 내에서 모든 delete 명령을 한 번에 전송
+      for (const id of ids) {
+        store.delete(id);
+      }
+    });
+  } catch (e) {
+    console.warn('IndexedDB deleteMultipleHistoryRecordsFromDB 실패, LocalStorage 데이터를 일괄 삭제합니다.', e);
+    const historyList = await getHistory();
+    const updated = historyList.filter(item => !ids.includes(item.id));
+    localStorage.setItem('selq_fallback_history', JSON.stringify(updated));
   }
 }
 
@@ -1699,6 +2030,37 @@ function retryQuiz() {
     forcedCorrect: false
   }));
   state.currentQuestionIndex = 0;
+  
+  // 다시 풀기 시 신규 진행 중 레코드 생성
+  state.currentActiveQuizId = Date.now();
+  let title = '나만의 퀴즈';
+  if (state.currentFiles && state.currentFiles.length > 0) {
+    if (state.currentFiles.length === 1) {
+      title = state.currentFiles[0].name;
+    } else {
+      title = `${state.currentFiles[0].name} 외 ${state.currentFiles.length - 1}개 파일`;
+    }
+  } else if (state.extractedText) {
+    title = state.extractedText.slice(0, 15) + '... 퀴즈';
+  }
+
+  const record = {
+    id: state.currentActiveQuizId,
+    title: title,
+    date: new Date().toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+    score: null, // 진행 중
+    correctCount: 0,
+    totalCount: state.questions.length,
+    answeredCount: 0,
+    questions: JSON.parse(JSON.stringify(state.questions)),
+    userAnswers: JSON.parse(JSON.stringify(state.userAnswers))
+  };
+
+  state.history.unshift(record);
+  saveHistoryRecord(record).catch(err => {
+    console.error('재시도 진행 중 히스토리 저장 실패:', err);
+  });
+  renderHistoryList();
 
   DOM.quizResultState.classList.add('hidden');
   DOM.quizActiveState.classList.remove('hidden');
@@ -1718,6 +2080,7 @@ function resetToNewQuiz(isFromPopState = false) {
   state.questions = [];
   state.userAnswers = [];
   state.currentQuestionIndex = 0;
+  state.currentActiveQuizId = null; // 고유 ID 초기화
   
   DOM.quizResultState.classList.add('hidden');
   DOM.quizActiveState.classList.add('hidden');
@@ -1742,10 +2105,23 @@ async function saveActiveQuizState() {
       currentQuestionIndex: state.currentQuestionIndex,
       extractedText: state.extractedText,
       currentFiles: state.currentFiles || [], // 진짜 File 객체들을 직접 저장
-      imageParts: state.imageParts
+      imageParts: state.imageParts,
+      currentActiveQuizId: state.currentActiveQuizId // 현재 풀고 있는 고유 퀴즈 ID 포함
     };
     try {
       await saveHistoryRecord(activeState);
+      
+      // 진행 중인 개별 퀴즈 레코드도 동기화
+      if (state.currentActiveQuizId) {
+        const historyIdx = state.history.findIndex(item => item.id === state.currentActiveQuizId);
+        if (historyIdx !== -1) {
+          state.history[historyIdx].userAnswers = JSON.parse(JSON.stringify(state.userAnswers));
+          state.history[historyIdx].currentQuestionIndex = state.currentQuestionIndex;
+          state.history[historyIdx].answeredCount = state.userAnswers.filter(ans => ans.selectedAnswer !== null && String(ans.selectedAnswer).trim() !== '').length;
+          await saveHistoryRecord(state.history[historyIdx]);
+          renderHistoryList();
+        }
+      }
     } catch (e) {
       console.error('임시 상태 저장 실패:', e);
     }
@@ -1765,6 +2141,7 @@ async function loadActiveQuizState() {
       state.extractedText = activeState.extractedText || '';
       state.imageParts = activeState.imageParts || [];
       state.currentFiles = activeState.currentFiles || []; // 진짜 File 객체 복원
+      state.currentActiveQuizId = activeState.currentActiveQuizId || null; // 고유 ID 복원
       
       // 화면 상태 동기화
       DOM.quizResultState.classList.add('hidden');
@@ -1822,7 +2199,7 @@ async function handlePopState(event) {
         resetToNewQuiz(true);
       } else {
         // 퀴즈 풀이 도중 이탈하려는 경우 퀴즈 중단 여부 확인
-        if (confirm('퀴즈 풀이를 중단하고 첫 화면으로 돌아가시겠습니까? 현재까지의 진행 상황은 초기화됩니다.')) {
+        if (confirm('퀴즈 중간에 나가시겠습니까? 작성 중인 진행 상황은 안전하게 임시 저장되므로 걱정하지 마세요!')) {
           resetToNewQuiz(true);
         } else {
           // 취소 시 현재 뒤로가기 동작을 무효화하기 위해 다시 퀴즈 상태를 스택에 넣어줌
