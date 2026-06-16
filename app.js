@@ -28,18 +28,20 @@ async function getStoredSupabaseConfig() {
   let url = await getSetting('supabase_url');
   let anonKeyRaw = await getSetting('supabase_anon_key');
   
-  // 2. 만약 없으면 기존 LocalStorage에서 마이그레이션 시도
-  const oldUrl = localStorage.getItem('selqu_supabase_url');
-  const oldAnonKeyRaw = localStorage.getItem('selqu_supabase_anon_key');
+  // 2. 만약 없으면 기존 LocalStorage에서 마이그레이션 시도 (selq 및 selqu 둘 다 확인)
+  const oldUrl = localStorage.getItem('selq_supabase_url') || localStorage.getItem('selqu_supabase_url');
+  const oldAnonKeyRaw = localStorage.getItem('selq_supabase_anon_key') || localStorage.getItem('selqu_supabase_anon_key');
   
   if (oldUrl) {
     url = oldUrl;
     await saveSetting('supabase_url', oldUrl);
+    localStorage.removeItem('selq_supabase_url');
     localStorage.removeItem('selqu_supabase_url');
   }
   if (oldAnonKeyRaw) {
     anonKeyRaw = oldAnonKeyRaw;
     await saveSetting('supabase_anon_key', oldAnonKeyRaw);
+    localStorage.removeItem('selq_supabase_anon_key');
     localStorage.removeItem('selqu_supabase_anon_key');
   }
   
@@ -169,7 +171,7 @@ const DOM = {
 // ----------------------------------------------------
 // 0. IndexedDB 설정 및 데이터 레이어
 // ----------------------------------------------------
-const DB_NAME = 'selqu_db';
+const DB_NAME = 'selq_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'quiz_history';
 let dbInstance = null;
@@ -213,7 +215,7 @@ async function getHistory() {
     });
   } catch (e) {
     console.warn('IndexedDB getHistory 실패, LocalStorage에서 복원합니다.', e);
-    const fallbackHistory = localStorage.getItem('selqu_fallback_history');
+    const fallbackHistory = localStorage.getItem('selq_fallback_history') || localStorage.getItem('selqu_fallback_history');
     if (!fallbackHistory) return [];
     try {
       return JSON.parse(fallbackHistory);
@@ -235,7 +237,7 @@ async function getActiveQuizState() {
     });
   } catch (e) {
     console.warn('IndexedDB getActiveQuizState 실패, LocalStorage에서 복원합니다.', e);
-    const val = localStorage.getItem('selqu_fallback_active_quiz');
+    const val = localStorage.getItem('selq_fallback_active_quiz') || localStorage.getItem('selqu_fallback_active_quiz');
     if (!val) return null;
     try {
       return JSON.parse(val);
@@ -267,7 +269,7 @@ async function saveHistoryRecord(record) {
           isFallbackMeta: true
         }));
       }
-      localStorage.setItem('selqu_fallback_active_quiz', JSON.stringify(fallbackActiveState));
+      localStorage.setItem('selq_fallback_active_quiz', JSON.stringify(fallbackActiveState));
       return;
     }
     
@@ -279,7 +281,7 @@ async function saveHistoryRecord(record) {
     } else {
       historyList.unshift(record);
     }
-    localStorage.setItem('selqu_fallback_history', JSON.stringify(historyList));
+    localStorage.setItem('selq_fallback_history', JSON.stringify(historyList));
   }
 }
 
@@ -307,6 +309,7 @@ async function clearHistoryRecords() {
     });
   } catch (e) {
     console.warn('IndexedDB clearHistoryRecords 실패, LocalStorage 데이터를 삭제합니다.', e);
+    localStorage.removeItem('selq_fallback_history');
     localStorage.removeItem('selqu_fallback_history');
   }
 }
@@ -323,6 +326,7 @@ async function clearActiveQuizState() {
     });
   } catch (e) {
     console.warn('IndexedDB clearActiveQuizState 실패, LocalStorage 데이터를 삭제합니다.', e);
+    localStorage.removeItem('selq_fallback_active_quiz');
     localStorage.removeItem('selqu_fallback_active_quiz');
   }
 }
@@ -340,7 +344,7 @@ async function saveSetting(key, val) {
     });
   } catch (e) {
     console.warn(`IndexedDB saveSetting 실패 ('${key}'), LocalStorage로 폴백합니다.`, e);
-    localStorage.setItem('selqu_fallback_' + key, JSON.stringify(val));
+    localStorage.setItem('selq_fallback_' + key, JSON.stringify(val));
   }
 }
 
@@ -356,7 +360,7 @@ async function getSetting(key) {
     });
   } catch (e) {
     console.warn(`IndexedDB getSetting 실패 ('${key}'), LocalStorage에서 복원합니다.`, e);
-    const val = localStorage.getItem('selqu_fallback_' + key);
+    const val = localStorage.getItem('selq_fallback_' + key) || localStorage.getItem('selqu_fallback_' + key);
     if (val === null) return null;
     try {
       return JSON.parse(val);
@@ -385,8 +389,8 @@ async function init() {
   setupEventListeners();
   initConfigButtons();
 
-  // 기존 로컬스토리지 데이터 IndexedDB로 자동 마이그레이션
-  const oldHistoryRaw = localStorage.getItem('selqu_history');
+  // 기존 로컬스토리지 데이터 IndexedDB로 자동 마이그레이션 (selq 및 selqu 둘 다 처리)
+  const oldHistoryRaw = localStorage.getItem('selq_history') || localStorage.getItem('selqu_history');
   if (oldHistoryRaw) {
     try {
       const oldHistory = JSON.parse(oldHistoryRaw);
@@ -395,18 +399,20 @@ async function init() {
           await saveHistoryRecord(item);
         }
       }
+      localStorage.removeItem('selq_history');
       localStorage.removeItem('selqu_history');
     } catch (e) {
       console.error('로컬스토리지 히스토리 마이그레이션 실패:', e);
     }
   }
 
-  const oldActiveQuizRaw = localStorage.getItem('selqu_active_quiz');
+  const oldActiveQuizRaw = localStorage.getItem('selq_active_quiz') || localStorage.getItem('selqu_active_quiz');
   if (oldActiveQuizRaw) {
     try {
       const activeState = JSON.parse(oldActiveQuizRaw);
       activeState.id = 'active_quiz_state';
       await saveHistoryRecord(activeState);
+      localStorage.removeItem('selq_active_quiz');
       localStorage.removeItem('selqu_active_quiz');
     } catch (e) {
       console.error('로컬스토리지 임시상태 마이그레이션 실패:', e);
@@ -428,14 +434,18 @@ async function init() {
 
 // 테마 초기화 (비동기)
 async function initTheme() {
-  // 1. IndexedDB 설정 시도
-  let storedTheme = await getSetting('selqu_theme');
+  // 1. IndexedDB 설정 시도 (selq_theme 우선, 없으면 selqu_theme 탐색)
+  let storedTheme = await getSetting('selq_theme');
+  if (!storedTheme) {
+    storedTheme = await getSetting('selqu_theme');
+  }
   
-  // 2. 만약 없으면 기존 LocalStorage에서 마이그레이션 시도
-  const oldTheme = localStorage.getItem('selqu_theme');
+  // 2. 만약 없으면 기존 LocalStorage에서 마이그레이션 시도 (selq_theme 및 selqu_theme 탐색)
+  const oldTheme = localStorage.getItem('selq_theme') || localStorage.getItem('selqu_theme');
   if (oldTheme) {
     storedTheme = oldTheme;
-    await saveSetting('selqu_theme', oldTheme);
+    await saveSetting('selq_theme', oldTheme);
+    localStorage.removeItem('selq_theme');
     localStorage.removeItem('selqu_theme');
   }
   
@@ -646,7 +656,7 @@ async function toggleTheme() {
     state.theme = 'dark';
     DOM.themeToggleIcon.className = 'fa-solid fa-sun';
   }
-  await saveSetting('selqu_theme', state.theme);
+  await saveSetting('selq_theme', state.theme);
   DOM.html.setAttribute('data-theme', state.theme);
 }
 
@@ -1821,7 +1831,7 @@ async function handlePopState(event) {
       }
     } else {
       // 메인 화면 상태에서 한 번 더 뒤로가기를 하려는 경우
-      if (confirm('selQu 서비스를 종료(이탈)하시겠습니까?')) {
+      if (confirm('selQ 서비스를 종료(이탈)하시겠습니까?')) {
         // 실제 뒤로가기를 한 번 더 유발하여 앱/페이지를 완전히 나감
         history.back();
       } else {

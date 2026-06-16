@@ -3,24 +3,26 @@
 
 :root {
   --font-primary: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  
+
   /* 테마 컬러 (기본: 라이트 모드) */
   --bg-primary: #f8fafc;
   --bg-secondary: #ffffff;
   --bg-tertiary: #f1f5f9;
-  
+
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --text-tertiary: #94a3b8;
-  
-  --accent-primary: #6366f1; /* Indigo */
-  --accent-secondary: #a855f7; /* Purple */
+
+  --accent-primary: #6366f1;
+  /* Indigo */
+  --accent-secondary: #a855f7;
+  /* Purple */
   --accent-glow: rgba(99, 102, 241, 0.1);
-  
+
   --border-color: rgba(226, 232, 240, 0.8);
   --glass-bg: rgba(255, 255, 255, 0.7);
   --glass-border: rgba(255, 255, 255, 0.5);
-  
+
   --success: #10b981;
   --success-light: rgba(16, 185, 129, 0.1);
   --error: #ef4444;
@@ -32,19 +34,21 @@
   --bg-primary: #090d16;
   --bg-secondary: #111827;
   --bg-tertiary: #1f2937;
-  
+
   --text-primary: #f8fafc;
   --text-secondary: #cbd5e1;
   --text-tertiary: #64748b;
-  
-  --accent-primary: #818cf8; /* Light Indigo */
-  --accent-secondary: #c084fc; /* Light Purple */
+
+  --accent-primary: #818cf8;
+  /* Light Indigo */
+  --accent-secondary: #c084fc;
+  /* Light Purple */
   --accent-glow: rgba(129, 140, 248, 0.15);
-  
+
   --border-color: rgba(55, 65, 81, 0.5);
   --glass-bg: rgba(17, 24, 39, 0.7);
   --glass-border: rgba(255, 255, 255, 0.08);
-  
+
   --success: #34d399;
   --success-light: rgba(52, 211, 153, 0.15);
   --error: #f87171;
@@ -97,13 +101,17 @@ body {
 }
 
 /* 출제 옵션 버튼 및 테마별 상태 설정 */
-.quiz-config-btn, .difficulty-config-btn, .type-config-btn {
+.quiz-config-btn,
+.difficulty-config-btn,
+.type-config-btn {
   background-color: var(--bg-secondary);
   border-color: var(--border-color);
   color: var(--text-secondary);
 }
 
-.quiz-config-btn:hover, .difficulty-config-btn:hover, .type-config-btn:hover {
+.quiz-config-btn:hover,
+.difficulty-config-btn:hover,
+.type-config-btn:hover {
   border-color: var(--accent-primary);
   color: var(--accent-primary);
   transform: translateY(-1px);
@@ -144,6 +152,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   width: 1.75rem;
   height: 1.75rem;
   border-radius: 0.5rem;
@@ -184,9 +193,21 @@ body {
 
 /* 흔들림 애니메이션 (오답일 때) */
 @keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  20%, 60% { transform: translateX(-6px); }
-  40%, 80% { transform: translateX(6px); }
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  20%,
+  60% {
+    transform: translateX(-6px);
+  }
+
+  40%,
+  80% {
+    transform: translateX(6px);
+  }
 }
 
 .animate-shake {
@@ -195,8 +216,15 @@ body {
 
 /* 통통 튀는 애니메이션 (정답일 때) */
 @keyframes bounce-sm {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-4px);
+  }
 }
 
 .animate-bounce-sm {
@@ -211,8 +239,13 @@ body {
 
 /* 커스텀 로딩 바 애니메이션 */
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
 }
 
 .shimmer-loading {
@@ -224,12 +257,15 @@ body {
 /* 반응형 네비게이션 제어 버튼 최적화 (280px 이상 모바일 대응) */
 @media (max-width: 360px) {
   #quizNavContainer {
-    gap: 0.375rem !important; /* 6px */
+    gap: 0.375rem !important;
+    /* 6px */
   }
+
   #quizNavContainer button {
     flex: 1 1 0% !important;
     min-width: 0 !important;
-    font-size: 0.6875rem !important; /* 11px */
+    font-size: 0.6875rem !important;
+    /* 11px */
     padding-left: 0.25rem !important;
     padding-right: 0.25rem !important;
     padding-top: 0.625rem !important;
@@ -239,6 +275,7 @@ body {
     overflow: hidden !important;
     text-overflow: ellipsis !important;
   }
+
   #quizNavContainer button i {
     display: none !important;
   }
