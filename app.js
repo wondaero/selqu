@@ -541,7 +541,7 @@ function updateLayoutForState() {
     }
     if (DOM.rightPanel) {
       DOM.rightPanel.classList.remove('hidden');
-      DOM.rightPanel.className = 'flex-1 flex flex-col max-w-3xl mx-auto w-full pb-24'; // 문제 푸는 화면 및 결과 화면 하단 짤림 방지
+      DOM.rightPanel.className = 'flex-1 flex flex-col max-w-3xl mx-auto w-full md:h-full md:overflow-hidden pb-24'; // 모바일 짤림 방지 및 데스크톱 고정 레이아웃 싱크
     }
   } else {
     // 대기 상태(첫 로드 등)일 때는 퀴즈 패널을 완전히 숨기고, 좌측 설정 패널만 중앙 정렬(최대 xl)하여 깔끔한 설정 전용 뷰로 사용
