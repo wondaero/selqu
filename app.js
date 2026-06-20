@@ -180,6 +180,7 @@ const DB_NAME = 'selq_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'quiz_history';
 let dbInstance = null;
+let isProgrammaticBack = false; // 첫 화면 이동 시 뒤로가기 종료 팝업 중복 호출 방지 플래그
 
 function openDB() {
   if (dbInstance) return Promise.resolve(dbInstance);
@@ -546,7 +547,7 @@ function updateLayoutForState() {
     // 대기 상태(첫 로드 등)일 때는 퀴즈 패널을 완전히 숨기고, 좌측 설정 패널만 중앙 정렬(최대 xl)하여 깔끔한 설정 전용 뷰로 사용
     if (DOM.leftPanel) {
       DOM.leftPanel.classList.remove('hidden');
-      DOM.leftPanel.className = 'w-full max-w-xl mx-auto flex flex-col gap-4';
+      DOM.leftPanel.className = 'w-full max-w-xl mx-auto flex flex-col gap-4 pb-24'; // 모바일 기기 하단 버튼 짤림 방지용 패딩 확보
     }
     if (DOM.rightPanel) {
       DOM.rightPanel.classList.add('hidden');
@@ -2089,6 +2090,7 @@ function resetToNewQuiz(isFromPopState = false) {
 
   // 화면 버튼 클릭으로 메인에 온 경우, 브라우저 히스토리 스택을 main으로 싱크 맞춤
   if (!isFromPopState && history.state?.page === 'quiz') {
+    isProgrammaticBack = true; // 프로그래밍적 뒤로가기 플래그 세팅 (이중 이탈 팝업 방지)
     history.back();
   }
 }
@@ -2185,6 +2187,11 @@ async function loadActiveQuizState() {
 
 // 브라우저 및 기기 물리 뒤로가기 핸들러
 async function handlePopState(event) {
+  if (isProgrammaticBack) {
+    isProgrammaticBack = false; // 플래그 리셋 후 리턴
+    return;
+  }
+
   const page = event.state ? event.state.page : null;
   
   // 뒤로가기 시 page 상태가 main이 되거나 없어지는 경우
